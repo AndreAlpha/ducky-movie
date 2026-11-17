@@ -1,0 +1,12 @@
+opencv-python==4.13.0.92
+numpy==2.4.6
+Pillow==12.2.0
+faster-whisper==1.2.1
+ctranslate2==4.8.0
+fastembed==0.8.0
+onnxruntime==1.26.0
+av==17.1.0
+tokenizers==0.23.1
+huggingface-hub==1.19.0
+python-docx==1.2.0
+pyinstaller==6.20.0

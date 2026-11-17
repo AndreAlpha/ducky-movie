@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { _electron as electron, expect } from '@playwright/test';
+import { runProcess } from '../electron/process';
+import { ffmpegPath, ffprobePath } from '../electron/binaries';
+
+await fs.mkdir('test-results',{recursive:true});
+const directory=await fs.mkdtemp(path.resolve('test-results/selection-ui-'));
+const files=Array.from({length:16},(_,index)=>path.join(directory,`Foto ${String(index+1).padStart(2,'0')}.png`));
+await runProcess(ffmpegPath,['-v','error','-y','-f','lavfi','-i','color=c=royalblue:s=320x180','-frames:v','1',files[0]]);
+for(const file of files.slice(1))await fs.copyFile(files[0],file);
+const env=Object.fromEntries(Object.entries(process.env).filter((item):item is[string,string]=>item[1]!==undefined));delete env.ELECTRON_RUN_AS_NODE;
+env.DUCKY_TEST_USER_DATA=path.join(directory,'user');env.HF_HUB_OFFLINE='1';env.DUCKY_MODELS_DIR=path.resolve('.cache/models');
+const executablePath=process.env.DUCKY_EXECUTABLE;
+if(executablePath){env.Path=`${process.env.WINDIR}\\System32;${process.env.WINDIR}`;env.PATH=env.Path;delete env.DUCKY_ENGINE_EXECUTABLE;delete env.DUCKY_FFMPEG_PATH;delete env.DUCKY_FFPROBE_PATH;}
+const app=await electron.launch({...executablePath?{executablePath,args:[`--user-data-dir=${env.DUCKY_TEST_USER_DATA}`]}:{args:[path.resolve('.')]},env,timeout:45000});
+const page=await app.firstWindow();page.setDefaultTimeout(30000);
+const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+const selected=()=>page.locator('.asset-card.selected');
+const ids=()=>selected().evaluateAll(cards=>cards.map(card=>card.getAttribute('data-asset-id')));
+try{
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('heading',{name:'La libreria è vuota'}).waitFor();
+  await app.evaluate(({dialog},files)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:files});},files);
+  await page.getByRole('button',{name:'Importa media',exact:true}).click();
+  await expect(page.locator('.asset-card')).toHaveCount(16,{timeout:60000});
+  await expect(page.locator('.library-panel input[type="checkbox"]')).toHaveCount(0);
+  const area=page.locator('.media-selection-area');
+  const bounds=await area.boundingBox();assert.ok(bounds);
+  await area.click({position:{x:4,y:4}});await expect(selected()).toHaveCount(0);
+  const cards=page.locator('.asset-card');
+  const row1=await cards.nth(1).boundingBox();assert.ok(row1);
+  await page.mouse.move(bounds.x+4,bounds.y+4);await page.mouse.down();
+  await page.mouse.move(bounds.x+bounds.width-12,row1.y+row1.height-2,{steps:8});
+  await expect(page.locator('.media-selection-marquee')).toHaveCSS('border-top-style','dashed');
+  await expect(selected()).toHaveCount(2);
+  await page.screenshot({path:path.join(directory,'lasso.png')});
+  await page.mouse.up();await expect(page.locator('.media-selection-marquee')).toHaveCount(0);
+  const firstPair=await ids();
+  // Escape restores the selection before a lasso gesture.
+  await page.mouse.move(bounds.x+4,bounds.y+4);await page.mouse.down();
+  await page.mouse.move(bounds.x+20,row1.y+15,{steps:4});await page.keyboard.press('Escape');await page.mouse.up();
+  assert.deepEqual(await ids(),firstPair);
+  // Ctrl extends the selection, including a rectangle drawn in reverse.
+  const row2=await cards.nth(3).boundingBox();assert.ok(row2);
+  await page.keyboard.down('Control');await page.mouse.move(bounds.x+bounds.width-10,row2.y+row2.height+4);await page.mouse.down();
+  await page.mouse.move(bounds.x+4,row2.y-3,{steps:8});await page.mouse.up();await page.keyboard.up('Control');
+  await expect(selected()).toHaveCount(4);
+  // Holding the lasso at the lower edge scrolls the media library.
+  await area.click({position:{x:4,y:4}});
+  await page.mouse.move(bounds.x+4,bounds.y+4);await page.mouse.down();
+  await page.mouse.move(bounds.x+bounds.width-12,bounds.y+bounds.height-2,{steps:8});
+  await expect.poll(()=>area.evaluate(node=>node.scrollTop)).toBeGreaterThan(160);
+  await page.mouse.up();assert.ok(await selected().count()>4);
+  await area.evaluate(node=>node.scrollTop=0);
+  await area.click({position:{x:4,y:4}});await expect(selected()).toHaveCount(0);
+  await page.mouse.move(bounds.x+4,bounds.y+4);await page.mouse.down();
+  await page.mouse.move(bounds.x+bounds.width-12,row1.y+row1.height-2,{steps:8});await page.mouse.up();
+  await expect(selected()).toHaveCount(2);
+  await page.getByRole('button',{name:'Anteprima di Foto 01.png',exact:true}).dragTo(page.locator('.timeline-video-lane').first(),{targetPosition:{x:210,y:45}});
+  await expect(page.locator('.timeline-clip')).toHaveCount(2);
+  const magnet=page.getByRole('button',{name:'Calamita',exact:true});
+  await expect(magnet).toHaveAttribute('aria-pressed','true');await magnet.click();await expect(magnet).toHaveAttribute('aria-pressed','false');
+  await page.keyboard.press('n');await expect(magnet).toHaveAttribute('aria-pressed','true');
+  assert.equal(await page.evaluate(()=>localStorage.getItem('ducky:timeline-snapping')),'on');
+  await page.getByLabel('Cerca nella libreria',{exact:true}).fill('n');await expect(magnet).toHaveAttribute('aria-pressed','true');
+  await page.getByLabel('Cerca nella libreria',{exact:true}).fill('');
+  await page.getByRole('button',{name:'Esporta film',exact:true}).click();
+  await expect(page.getByLabel('Accelerazione esportazione',{exact:true})).toHaveValue('auto');
+  const capability=await page.evaluate(()=>window.ducky.getExportCapabilities());
+  const preferred=capability.encoders.find(item=>item.encoder===capability.preferred)!;
+  await expect(page.locator('.export-acceleration strong')).toHaveText(preferred.label);
+  await page.getByLabel('Accelerazione esportazione',{exact:true}).selectOption('cpu');
+  await expect(page.locator('.export-acceleration strong')).toHaveText('Codifica con CPU');
+  await page.getByLabel('Accelerazione esportazione',{exact:true}).selectOption('auto');
+  await expect(page.locator('.export-acceleration strong')).toHaveText(preferred.label);
+  const output=path.join(directory,'GPU export.mp4');
+  await app.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},output);
+  await page.getByLabel('Risoluzione esportazione',{exact:true}).selectOption('720p');
+  await page.getByRole('button',{name:'Scegli dove salvare',exact:true}).click();
+  await page.getByRole('heading',{name:'Il tuo film è pronto',exact:true}).waitFor({timeout:180000});
+  await expect(page.locator('.export-acceleration strong')).toHaveText(preferred.label);
+  const info=JSON.parse((await runProcess(ffprobePath,['-v','error','-show_streams','-of','json',output])).toString());
+  assert.equal(info.streams.find((stream:any)=>stream.codec_type==='video').codec_name,'h264');
+  await page.screenshot({path:path.join(directory,'export-acceleration.png')});
+  assert.deepEqual(errors,[]);
+  console.log(`Selection UI passed: border-only selection, dashed lasso, Ctrl/reverse selection, Escape, edge scrolling, empty deselection, bulk drag, magnet toggle/shortcut and ${preferred.label} export. ${directory}`);
+}catch(error){await page.screenshot({path:path.join(directory,'failure.png')}).catch(()=>{});console.error(await page.locator('body').innerText().catch(()=>'<closed>'));throw error;}
+finally{await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});}

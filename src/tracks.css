@@ -1,0 +1,55 @@
+.timeline-tracks-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.timeline-tracks-bar { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-bottom: 1px solid var(--border); background: #181b20; flex-shrink: 0; }
+.timeline-tracks-bar .secondary-button { min-height: 30px; padding: 6px 10px; font-size: 11px; }
+.timeline-tracks-bar > span { margin-left: 10px; color: #89929f; font-size: 10px; }
+.timeline-tracks-shell .timeline-scroll { overflow: auto; position: relative; flex: 1; min-height: 130px; }
+.timeline-track-lane { border-bottom: 1px solid #2b3038; background: #161a1f; }
+.timeline-track-lane:nth-of-type(odd) { background: #191d23; }
+.timeline-track-lane.drop-target { background: #293321; box-shadow: inset 0 0 0 1px #bfaa65; }
+.timeline-track-lane.track-selected > .timeline-track-header { border-left: 3px solid #d8b459; padding-left: 11px; background: #282b2d; }
+.timeline-track-header { position: sticky; left: 0; top: 0; height: 100%; padding: 12px 12px 8px 14px; background: #1c2026; border-right: 1px solid #353b44; z-index: 6; box-sizing: border-box; color: #a3abb7; }
+.track-name-row { display: flex; align-items: center; gap: 6px; }
+.track-name-row input { width: 133px; min-width: 0; background: transparent; border: 1px solid transparent; color: #d2d7df; border-radius: 3px; padding: 4px; font: inherit; font-size: 11px; }
+.track-name-row input:hover, .track-name-row input:focus { border-color: #596473; background: #14181d; }
+.track-actions { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 18px; }
+.track-actions button { width: 25px; height: 23px; display: grid; place-items: center; border: 1px solid #3b414b; background: #242a32; color: #a4aeba; border-radius: 4px; padding: 0; }
+.track-actions button[aria-pressed=true] { color: #f1c467; border-color: #8e7745; }
+.track-actions button:hover:not(:disabled) { color: #fff; background: #343d48; }
+.track-actions button:disabled { opacity: .3; cursor: default; }
+.timeline-empty-track { position: absolute; top: 50%; transform: translateY(-50%); color: #687383; font-size: 11px; pointer-events: none; }
+.timeline-track-item { box-sizing: border-box; }
+.timeline-native-drop-surface { position:absolute; inset:0; z-index:4; }
+.timeline-track-item .trim-handle { position: absolute; top: 0; bottom: 0; width: 9px; touch-action: none; z-index: 3; }
+.timeline-track-item .trim-handle.left { left: 0; }
+.timeline-track-item .trim-handle.right { right: 0; }
+.timeline-track-item.selected .trim-handle { opacity: 1; }
+.timeline-audio-clip .trim-handle { opacity: 0; }
+.timeline-track-item .clip-label, .timeline-track-item .clip-filmstrip, .timeline-track-item .clip-waveform, .timeline-track-item .audio-clip-name { pointer-events: none; }
+.timeline-effect-lane { border-bottom: 1px solid #2b3038; }
+.effect-track-header { display: flex; align-items: center; gap: 7px; font-size: 10px; padding-top: 8px; }
+.timeline-effect-item { position: absolute; top: 8px; height: 32px; padding: 0 12px; background: #453a51; border-color: #7a638b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: grab; touch-action: none; user-select: none; }
+.timeline-effect-item.selected { border-color: #e8bf63; box-shadow: inset 0 0 0 1px #e8bf63; }
+.timeline-effect-item.gesturing { cursor: grabbing; background: #675277; box-shadow: 0 0 0 1px #f0cb78, 0 3px 10px #0008; }
+.effect-item-name { display: block; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.effect-gesture-readout { position: absolute; inset: 15px 9px 0; font-size: 9px; line-height: 14px; color: #ffdf94; background: #211b29e8; pointer-events: none; }
+.effect-trim-handle { position: absolute; top: 0; bottom: 0; display: grid; place-items: center; width: 9px; color: #e9c36f; opacity: .45; cursor: ew-resize; touch-action: none; background: #0003; }
+.effect-trim-handle.start { left: 0; }
+.effect-trim-handle.end { right: 0; }
+.timeline-effect-item.selected .effect-trim-handle, .timeline-effect-item:hover .effect-trim-handle, .effect-trim-handle:focus-visible { opacity: 1; background: #dfb7583b; }
+.effect-track-header small { display: block; margin-top: 3px; color: #7e8795; font-size: 9px; }
+.timeline-effect-snap { border-left: 1px solid #f2cb69; box-shadow: 0 0 4px #f2cb6955; }
+.timeline-snap-guide { position:absolute; top:30px; bottom:12px; z-index:7; width:1px; background:#f2cb69; box-shadow:0 0 5px #f2cb6980; pointer-events:none; }
+.timeline-snap-guide::before,.timeline-snap-guide::after { content:""; position:absolute; left:-3px; width:7px; height:7px; border:1px solid #f2cb69; background:#29241b; transform:rotate(45deg); }
+.timeline-snap-guide::before { top:0; } .timeline-snap-guide::after { bottom:0; }
+.timeline-snap-label { position:absolute; top:7px; left:7px; padding:4px 6px; border:1px solid #9d8245; border-radius:4px; background:#30291b; color:#ffe3a4; font-size:10px; white-space:nowrap; box-shadow:0 2px 6px #0007; }
+.timeline-snap-label.align-left { left:auto; right:7px; }
+.timeline-ruler-playhead { background: #f0eeeb; }
+.timeline-ruler-ticks { overflow: hidden; }
+.timeline-placement-indicator { z-index: 7; width: 2px; background: #8abcb0; pointer-events: none; box-shadow: 0 0 5px #8abcb066; }
+.timeline-placement-indicator.inserting { width: 3px; background: #edc364; box-shadow: 0 0 7px #edc36488; }
+.timeline-placement-indicator > span { position: absolute; top: 2px; left: 5px; background: #182329; color: #c6eee2; border: 1px solid #506e6b; border-radius: 3px; padding: 3px 5px; font-size: 9px; white-space: nowrap; }
+.timeline-placement-indicator.inserting > span { background: #342b19; color: #f7dda0; border-color: #8d7545; }
+.timeline-drop-error { display: flex; align-items: center; gap: 12px; padding: 6px 14px; background: #472d2b; color: #f4c6bd; font-size: 11px; }
+.timeline-drop-error > button { margin-left: auto; padding: 0 4px; background: transparent; color: inherit; font-size: 19px; }
+.timeline-subtitles-lane .timeline-effect-item { background: #51462e; border-color: #8b7748; color: #edda9d; }
+@media (max-width: 1150px) { .timeline-tracks-bar > span { display: none; } }

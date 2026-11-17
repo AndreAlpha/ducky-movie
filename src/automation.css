@@ -1,0 +1,72 @@
+.automation-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.library-nav { overflow-y:auto; min-height:0; scrollbar-width:thin; gap:3px; }
+.library-nav button { flex-shrink:0; min-height:49px; gap:5px; }
+.workspace-toolbar .workspace-label { width:auto; margin-right:auto; }
+.workspace-action { display:flex; align-items:center; gap:6px; font-size:10px; color:#c6cbd1; padding:7px; border-radius:4px; white-space:nowrap; }
+.workspace-action:hover { color:var(--yellow); background:#ffffff08; }
+.feature-intro { margin:3px 0 18px; color:#a6afb8; line-height:1.7; font-size:11px; }
+.feature-intro>svg { color:var(--yellow); margin-bottom:8px; }
+.feature-intro h3 { margin:4px 0 9px; color:#e1e4e7; font-size:15px; }
+.feature-actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.feature-media { display:flex; gap:10px; align-items:center; text-align:left; background:#ffffff04; border:1px solid #ffffff0b; border-radius:5px; padding:10px; width:100%; margin:9px 0; color:#c1c9cf; font-size:11px; }
+.feature-media span { min-width:0; overflow-wrap:anywhere; }
+.feature-media small { display:block; margin-top:5px; color:#7f8c99; font-size:10px; }
+.studio-panel>.full-width { margin-bottom:12px; }
+.studio-panel .select-control { display:flex; flex-direction:column; align-items:stretch; gap:8px; }
+.studio-panel .select-control select { width:100%; }
+.asset-transcribe { font-size:10px; color:#c5ba90; display:flex; align-items:center; gap:5px; padding:6px 9px; width:100%; border-top:1px solid #ffffff09; }
+.transcript-result { margin-top:18px; }
+.transcript-result textarea { width:100%; line-height:1.6; }
+.timeline-resize { height:5px; min-height:5px; flex-shrink:0; background:#24282c; cursor:ns-resize; touch-action:none; }
+.timeline-resize:hover,.timeline-resize:focus-visible { background:#a89150; outline:none; }
+@media (max-width:1200px) { .workspace-action { font-size:9px; gap:4px; padding:5px; } .project-settings { gap:5px; } .project-settings>.muted,.project-settings>.toolbar-separator { display:none; } }
+.project-exchange-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+.automation-error { color: #f2a29c; white-space: pre-wrap; font-size: 12px; }
+.automation-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.automation-assets { min-width: 0; border: 1px solid #ffffff14; border-radius: 6px; padding: 10px; max-height: 190px; overflow: auto; }
+.automation-assets legend { color: #c4c9ce; font-size: 11px; padding: 0 5px; }
+.automation-assets > label, .checkbox-control { display: flex; align-items: center; gap: 8px; margin: 9px 0; font-size: 11px; color: #a8b0b9; overflow-wrap: anywhere; }
+.automation-assets input, .checkbox-control input { accent-color: var(--yellow); }
+.automation-asset-actions { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0 14px; flex-wrap: wrap; }
+.automation-panel .number-pair { margin: 16px 0; }
+.automation-panel .number-pair input { display: block; width: 100%; margin-top: 6px; }
+.automation-panel .select-control select { width: min(65%, 350px); }
+.script-input { width: 100%; margin-top: 10px; }
+.automation-progress { margin-top: 20px; padding: 16px; background: #ffffff05; border-radius: 6px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.automation-progress > span:first-child { width: 100%; display: flex; gap: 10px; align-items: center; }
+.automation-progress progress { flex: 1; accent-color: var(--yellow); }
+.automation-summary { display: flex; align-items: center; gap: 9px; margin-top: 16px; line-height: 1.7; color: #aac6ad; font-size: 11px; }
+.short-candidates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 18px 0; }
+.short-candidates button { flex-direction: column; padding: 10px 6px; }
+.short-candidates button.chosen { border-color: var(--yellow); color: var(--yellow); }
+.short-candidates small { font-size: 9px; color: #8b969f; }
+.short-source-preview { display: block; width: 100%; max-height: 240px; background: #000; margin: 16px 0; }
+.montage-recap { display:flex; flex-direction:column; gap:6px; padding:12px; margin:12px 0 18px; border:1px solid #e1bd5b35; background:#e1bd5b08; border-radius:6px; color:#b3bdc5; font-size:11px; line-height:1.5; }
+.montage-recap strong { color:#e2d2a2; }
+.montage-options { padding:12px 0 16px; }
+.montage-options summary { cursor:pointer; font-size:12px; color:#c0c8ce; }
+.automation-panel .number-pair .select-control { flex:1; min-width:0; flex-direction:column; align-items:stretch; gap:6px; }
+.automation-panel .number-pair .select-control select { width:100%; }
+.short-preview-stage { position:relative; margin:16px 0; background:#000; }
+.short-preview-stage .short-source-preview { height:240px; object-fit:contain; margin:0; }
+.short-focus-marker { position:absolute; transform:translate(-50%,-50%); color:var(--yellow); filter:drop-shadow(0 1px 2px #000); pointer-events:none; }
+.short-focus-target { position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; border:1px dashed var(--yellow); background:transparent; border-radius:0; }
+.short-focus-target:focus-visible { outline:2px solid var(--yellow); outline-offset:2px; }
+.short-focus-announcement { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.advanced-inspector details { border-bottom: 1px solid #ffffff0e; padding: 13px 0; }
+.advanced-inspector summary { cursor: pointer; color: #b9c0c7; font-size: 12px; }
+.advanced-inspector textarea { width: 100%; }
+.advanced-inspector button { flex-shrink: 0; }
+.advanced-inspector .control-section { margin-bottom: 8px; }
+.subtitle-word-row { display: grid; grid-template-columns: 1fr 80px 80px 28px; gap: 6px; margin: 6px 0; }
+.subtitle-word-row input { width: 100%; }
+.advanced-list { max-height: 320px; overflow: auto; }
+.advanced-inspector > [hidden] { display: none !important; }
+.effect-inspector { min-height: 0; }
+.effect-inspector .number-pair { flex-wrap: wrap; }
+.effect-inspector .number-pair > .select-control { flex: 1; width: auto; min-width: 0; flex-direction: column; align-items: stretch; gap: 6px; line-height: 1.4; }
+.effect-inspector .number-pair > .select-control input { width: 100%; background: #181a1c; border: 1px solid #ffffff10; border-radius: 4px; }
+.effect-inspector .select-control:has(textarea) { display: block; }
+.effect-inspector textarea { margin-top: 8px; min-height: 72px; resize: vertical; }
+.effect-inspector input, .effect-inspector select, .effect-inspector textarea { min-width: 0; max-width: 100%; }
+.effect-inspector .secondary-button { white-space: normal; }

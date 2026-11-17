@@ -1,0 +1,67 @@
+# Dependencies and compiled application (upload installers to GitHub Releases)
+node_modules/
+/dist/
+/dist-electron/
+/release/
+/engine-build/
+/engine-dist/
+*.tsbuildinfo
+
+# Local Python environments and caches; keep engine/worker.spec in Git
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+*.egg-info/
+
+# Downloaded models, generated media, test results and diagnostics
+.cache/
+/models/
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage/
+.coverage
+.coverage.*
+htmlcov/
+*.log
+*.dmp
+
+# Personal projects and local export folders
+*.duckymovie
+*.duckymodel
+/exports/
+/recordings/
+
+# Local settings, credentials and signing certificates
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+*.pfx
+*.p12
+*.pem
+*.key
+.npmrc
+.pypirc
+
+# Editor settings, temporary files and operating system metadata
+.idea/
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
