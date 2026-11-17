@@ -15,10 +15,14 @@ class EncodingChoice:
     encoder: str
     args: list[str]
     fallback: str | None = None
+    composition: str = "cpu"
+    composition_device: str | None = None
 
     def diagnostic(self):
         return {"encoder": self.encoder, "mode": "cpu" if self.encoder == "libx264" else "gpu",
-            "label": ENCODERS[self.encoder], **({"fallback": self.fallback} if self.fallback else {})}
+            "label": ENCODERS[self.encoder], "composition": self.composition,
+            **({"compositionDevice": self.composition_device} if self.composition_device else {}),
+            **({"fallback": self.fallback} if self.fallback else {})}
 
 
 def encoder_args(encoder, quality="standard"):
@@ -79,7 +83,8 @@ def is_hardware_failure(error):
 
 def report_encoding(progress, value, choice, with_message=True):
     label = ENCODERS[choice.encoder]
-    message = f"Composizione CPU · codifica {'CPU' if choice.encoder == 'libx264' else 'GPU ' + label}"
+    composition=f"GPU {choice.composition_device or ''}".strip() if choice.composition=="gpu" else "CPU"
+    message = f"Composizione {composition} · codifica {'CPU' if choice.encoder == 'libx264' else 'GPU ' + label}"
     if choice.fallback:
         message += " · ripiego CPU"
     if getattr(progress, "encoding_metadata", False):

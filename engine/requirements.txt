@@ -10,3 +10,5 @@ tokenizers==0.23.1
 huggingface-hub==1.19.0
 python-docx==1.2.0
 pyinstaller==6.20.0
+moderngl==5.13.0
+glcontext==3.1.0

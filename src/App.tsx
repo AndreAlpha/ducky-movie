@@ -85,6 +85,8 @@ import {
   moveClips,
   projectDuration,
   removeClips,
+  removeAssets,
+  getUsedAssetIds,
   updateClips,
   shiftClips,
   splitAudioTrack,
@@ -221,22 +223,27 @@ function Modal({
   children,
   wide = false,
   locked = false,
+  descriptionId,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
   locked?: boolean;
+  descriptionId?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const node = dialogRef.current;
     node?.showModal();
+    node?.querySelector<HTMLElement>('[data-initial-focus]')?.focus();
     return () => node?.close();
   }, []);
   return (
     <dialog
       ref={dialogRef}
+      aria-label={title}
+      aria-describedby={descriptionId}
       className={`modal ${wide ? 'wide' : ''}`}
       onCancel={(event) => {
         event.preventDefault();
@@ -282,6 +289,7 @@ export default function App() {
   const [sourceAssetId, setSourceAssetId] = useState<string | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const assetAnchor = useRef<string | null>(null);
+  const [pendingAssetRemoval, setPendingAssetRemoval] = useState<{ projectId: string; ids: string[]; usedCount: number } | null>(null);
   const [sourceTime, setSourceTime] = useState(0);
   const [zoom, setZoom] = useState(26);
   const [snappingEnabled, setSnappingEnabled] = useState(() => {
@@ -414,6 +422,7 @@ export default function App() {
 
   const replaceEditorProject = useCallback((next: Project) => {
     setSelectedAssetIds([]); assetAnchor.current=null;
+    setPendingAssetRemoval(null);
     pendingDrafts.current.clear();
     setHasPendingDraft(false);
     currentEffectSelection.current = undefined;
@@ -695,6 +704,42 @@ export default function App() {
       else if(result.audioIds.length){const id=result.audioIds[0];setSelectedId(id);setSelectedType('audio');setSelectedIds([]);setActiveTrackId(getAudioTrackId(result.project,id));setTime(result.project.audioTracks.find(track=>track.id===id)!.start);}
       say(`${result.clipIds.length+result.audioIds.length} media aggiunti alla timeline`);
     }catch(error){say(error instanceof Error?error.message:String(error),true);}
+  }
+
+  function removeLibrarySelection(ids: readonly string[]) {
+    document.dispatchEvent(new Event('ducky:commit-drafts'));
+    const base = currentProject.current;
+    const next = removeAssets(base, ids);
+    if (next === base) return;
+    const removed = new Set(ids);
+    edit(next);
+    setPlaying(false);
+    setSelectedAssetIds(previous => previous.filter(id => !removed.has(id)));
+    if (assetAnchor.current && removed.has(assetAnchor.current)) assetAnchor.current = null;
+    if (sourceAssetId && removed.has(sourceAssetId)) { setSourceAssetId(null); setSourceTime(0); }
+    setSelectedIds(previous => previous.filter(id => next.clips.some(clip => clip.id === id)));
+    if (selectedId && !next.clips.some(clip => clip.id === selectedId) && !next.audioTracks.some(audio => audio.id === selectedId)) setSelectedId(null);
+    if (effectSelection && base.overlays?.some(overlay => overlay.id === effectSelection) && !next.overlays?.some(overlay => overlay.id === effectSelection)) setEffectSelection(undefined);
+    const count = base.assets.length - next.assets.length;
+    say(`${count === 1 ? 'Media rimosso' : `${count} media rimossi`} dal progetto. Ctrl+Z per annullare.`);
+    document.querySelector<HTMLElement>('.media-selection-area')?.focus({ preventScroll: true });
+  }
+
+  function requestLibraryRemoval() {
+    if (busy || !selectedAssetIds.length || document.querySelector('dialog[open]')) return;
+    const base = currentProject.current;
+    const ids = selectedAssetIds.filter(id => base.assets.some(asset => asset.id === id));
+    if (!ids.length) return;
+    const usedCount = getUsedAssetIds(base, ids).length;
+    setPlaying(false);
+    if (usedCount) setPendingAssetRemoval({ projectId: base.id, ids, usedCount });
+    else removeLibrarySelection(ids);
+  }
+
+  function closeLibraryRemoval() {
+    document.getElementById('remove-media-description')?.closest<HTMLDialogElement>('dialog')?.close();
+    setPendingAssetRemoval(null);
+    document.querySelector<HTMLElement>('.media-selection-area')?.focus({ preventScroll: true });
   }
 
   const deleteSelection = useCallback(() => {
@@ -1338,10 +1383,11 @@ export default function App() {
           className="library-panel"
           aria-label={tabs.find((item) => item.id === tab)?.name}
           onKeyDown={event=>{
-            if(!['media','audio'].includes(tab)||(event.target as HTMLElement).closest('input:not([type="checkbox"]),textarea,select'))return;
+            if(!['media','audio'].includes(tab)||(event.target as HTMLElement).closest('input:not([type="checkbox"]),textarea,select,[contenteditable="true"]')||document.querySelector('dialog[open]'))return;
             if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){event.preventDefault();event.stopPropagation();setSelectedAssetIds(visibleAssets.filter(asset=>!asset.missing).map(asset=>asset.id));}
             else if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setSelectedAssetIds([]);}
-            else if(['Delete','Backspace'].includes(event.key)||(event.ctrlKey||event.metaKey)&&['b','c','d','v'].includes(event.key.toLowerCase()))event.stopPropagation();
+            else if(['Delete','Backspace'].includes(event.key)){event.preventDefault();event.stopPropagation();if(!event.repeat)requestLibraryRemoval();}
+            else if((event.ctrlKey||event.metaKey)&&['b','c','d','v'].includes(event.key.toLowerCase()))event.stopPropagation();
           }}
         >
           <div className="panel-heading">
@@ -1390,7 +1436,7 @@ export default function App() {
               {project.assets.length>0&&<div className="library-selection-tools">
                 <div className="library-selection-count"><button className="text-button" aria-label="Seleziona tutti i media" onClick={()=>setSelectedAssetIds(visibleAssets.filter(asset=>!asset.missing).map(asset=>asset.id))}>Seleziona tutti</button><span aria-live="polite">{selectedAssetIds.length} selezionati</span><button className="text-button" aria-label="Deseleziona media" disabled={!selectedAssetIds.length} onClick={()=>{setSelectedAssetIds([]);assetAnchor.current=null;}}>Deseleziona</button></div>
                 <button className="secondary-button full-width" aria-label="Aggiungi selezione alla timeline" disabled={!selectedAssetIds.length} onClick={()=>addLibrarySelection()}><Plus size={14}/>Aggiungi {selectedAssetIds.length>1?`${selectedAssetIds.length} media`:'alla timeline'}</button><button className="text-button library-montage" disabled={!selectedAssetIds.length} onClick={()=>openAutomation('montage')}><Sparkles size={13}/>Monta la selezione</button>
-                <p>Trascina dal vuoto per il lazo · Ctrl+clic aggiunge · Maiusc+clic seleziona un intervallo</p>
+                <p>Trascina dal vuoto per il lazo · Ctrl+clic aggiunge · Maiusc+clic seleziona un intervallo · Canc rimuove dal progetto</p>
               </div>}
               <MediaSelectionArea selectedIds={selectedAssetIds} availableIds={visibleAssets.filter(asset=>!asset.missing).map(asset=>asset.id)} onSelectionChange={ids=>{setSelectedAssetIds(ids);assetAnchor.current=ids[0]??null;}}>
                 {visibleAssets.length ? (
@@ -1400,7 +1446,7 @@ export default function App() {
                         key={asset.id}
                         data-asset-id={asset.id}
                         className={`asset-card ${selectedAssetIds.includes(asset.id) ? 'selected' : ''} ${asset.missing ? 'missing' : ''}`}
-                        onClick={event=>{if(!asset.missing&&!(event.target as HTMLElement).closest('button'))selectLibraryAsset(asset.id,event);}}
+                        onClick={event=>{if(!asset.missing&&!(event.target as HTMLElement).closest('button')){selectLibraryAsset(asset.id,event);event.currentTarget.querySelector<HTMLButtonElement>('.asset-preview')?.focus({preventScroll:true});}}}
                       >
                         <button
                           className="asset-preview"
@@ -2868,6 +2914,24 @@ export default function App() {
             >
               <Plus size={16} /> Crea film
             </button>
+          </div>
+        </Modal>
+      )}
+      {pendingAssetRemoval && (
+        <Modal title={pendingAssetRemoval.ids.length === 1 ? 'Rimuovere questo media?' : `Rimuovere ${pendingAssetRemoval.ids.length} media?`}
+          onClose={closeLibraryRemoval} descriptionId="remove-media-description">
+          <p className="modal-intro" id="remove-media-description">
+            {pendingAssetRemoval.usedCount === 1 ? 'Un media selezionato è usato nel film e verrà rimosso anche dalla timeline.' : `${pendingAssetRemoval.usedCount} media selezionati sono usati nel film e verranno rimossi anche dalla timeline.`}
+            {' '}Le altre clip resteranno al loro posto, lasciando spazi vuoti. Saranno rimossi anche gli eventuali loghi, la musica e i sottotitoli collegati a questi media.
+          </p>
+          <p>I file originali sul computer resteranno intatti. Puoi annullare la rimozione con Ctrl+Z.</p>
+          <div className="modal-actions">
+            <button className="secondary-button" data-initial-focus onClick={closeLibraryRemoval}>Annulla</button>
+            <button className="primary-button" onClick={() => {
+              const request = pendingAssetRemoval;
+              closeLibraryRemoval();
+              if (request.projectId === currentProject.current.id) removeLibrarySelection(request.ids);
+            }}><Trash2 size={16}/>Rimuovi dal progetto e dalla timeline</button>
           </div>
         </Modal>
       )}

@@ -478,6 +478,39 @@ export function removeClip(project: Project, clipId: string): Project {
   return removeClips(project, [clipId]);
 }
 
+/** Assets referenced anywhere in the film, including logos and background music. */
+export function getUsedAssetIds(project: Project, assetIds: readonly string[]): string[] {
+  const used = new Set([
+    ...project.clips.map((clip) => clip.assetId),
+    ...project.audioTracks.map((audio) => audio.assetId),
+    ...(project.overlays ?? []).flatMap((overlay) => overlay.assetId ? [overlay.assetId] : []),
+    ...(project.music ? [project.music.assetId] : []),
+  ]);
+  return [...new Set(assetIds)].filter((assetId) => used.has(assetId));
+}
+
+/** Remove library references and their usages without moving surviving timeline items. */
+export function removeAssets(project: Project, assetIds: readonly string[]): Project {
+  const selected = new Set(assetIds);
+  const assets = project.assets.filter((asset) => !selected.has(asset.id));
+  if (assets.length === project.assets.length) return project;
+  const used = getUsedAssetIds(project, assetIds).length > 0;
+  // Materialize implicit sequential starts before removing clips, preserving all gaps.
+  const clips = project.clips.some((clip) => selected.has(clip.assetId))
+    ? timelinePositions(project).filter(({ clip }) => !selected.has(clip.assetId))
+      .map(({ clip, start }) => ({ ...clip, start }))
+    : project.clips;
+  return changed(project, {
+    assets,
+    clips,
+    audioTracks: project.audioTracks.filter((audio) => !selected.has(audio.assetId)),
+    ...(project.overlays ? { overlays: project.overlays.filter((overlay) => !overlay.assetId || !selected.has(overlay.assetId)) } : {}),
+    ...(project.music && selected.has(project.music.assetId) ? { music: null } : {}),
+    // Keep a hole even when removing the final (or the only) item in the film.
+    ...(used ? { duration: projectDuration(project) } : {}),
+  });
+}
+
 /** targetIndex is the clip's final array index after moving. */
 export function moveClip(
   project: Project,

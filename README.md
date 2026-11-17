@@ -6,17 +6,17 @@ anteprima e timeline. Il montaggio e l’esportazione avvengono sul computer.
 ## Avvio su Windows
 
 Per installare DuckyMovie, scarica dalla sezione **Releases** di GitHub il file
-`DuckyMovie-Setup-0.6.0-Windows-x64.exe`, aprilo e segui la procedura guidata.
+`DuckyMovie-Setup-0.6.1-Windows-x64.exe`, aprilo e segui la procedura guidata.
 È un unico download con applicazione, FFmpeg e motore Python inclusi. I modelli
 facoltativi di trascrizione e analisi vengono scaricati al primo utilizzo.
 
 In alternativa, puoi usare la versione ZIP portatile descritta qui sotto.
 
 Apri `Avvia DuckyMovie.cmd` nella cartella del progetto. Se la versione compilata
-è presente, il file avvia direttamente `release/0.6.0/win-unpacked/DuckyMovie.exe`.
+è presente, il file avvia direttamente `release/0.6.1/win-unpacked/DuckyMovie.exe`.
 
 Per trasferirlo su un altro PC Windows x64, estrai completamente
-`release/0.6.0/DuckyMovie-0.6.0-Windows-x64.zip` e apri `DuckyMovie.exe` nella cartella
+`release/0.6.1/DuckyMovie-0.6.1-Windows-x64.zip` e apri `DuckyMovie.exe` nella cartella
 estratta. Electron, FFmpeg, FFprobe e il motore di montaggio sono inclusi:
 non occorre installare Python sul PC di destinazione.
 
@@ -34,6 +34,11 @@ non occorre installare Python sul PC di destinazione.
   Puoi aggiungere o trascinare l’intera selezione nella timeline in un’operazione,
   oppure usare **Monta la selezione**. Ctrl+A seleziona i media quando la libreria
   ha il focus; Esc annulla la selezione. La ricerca limita i media selezionabili.
+- Premi **Canc** nella libreria per rimuovere i media selezionati dal progetto.
+  Se sono usati nel film, una conferma avvisa della rimozione anche dalla timeline:
+  le altre clip restano al loro posto e vengono conservati gli spazi vuoti.
+  Sono rimossi anche loghi, musica e sottotitoli collegati ai media eliminati.
+  **Ctrl+Z** annulla l'operazione; i file originali sul computer restano intatti.
 - Aggiungi i file alla timeline con **+**, doppio clic o trascinamento.
 - Seleziona una clip e trascina i bordi per ritagliarla. Ctrl+B divide la clip al
   cursore. Trascina le clip o usa le frecce della barra per riordinarle.
@@ -73,8 +78,10 @@ non occorre installare Python sul PC di destinazione.
 - L’esportazione usa automaticamente la codifica GPU disponibile (NVIDIA,
   Intel o AMD), verificata con una prova reale. Il pannello mostra il motore
   usato; se la GPU non è utilizzabile passa alla CPU. Puoi scegliere **Solo CPU**
-  per compatibilità. La composizione degli effetti può continuare a usare la
-  CPU: il carico GPU della codifica è distinto dal grafico 3D.
+  per compatibilità. Nei montaggi di immagini con zoom, dissolvenze e sottotitoli,
+  la GPU compone anche le immagini tramite OpenGL. Gli effetti non compatibili
+  usano il compositore CPU ottimizzato; il pannello distingue composizione e
+  codifica. Il carico della codifica è distinto dal grafico 3D della GPU.
 
 ## Video Make e shorts
 
@@ -184,12 +191,13 @@ npm run test:editing-ui
 npm run test:library-ui
 npm run test:timeline-ui
 npm run test:selection-ui
+npm run test:media-removal-ui
 npm run package
 ```
 
-`npm run package` genera la cartella eseguibile e lo ZIP Windows x64 in `release/0.6.0`.
+`npm run package` genera la cartella eseguibile e lo ZIP Windows x64 in `release/0.6.1`.
 `npm run package:installer` genera un installer Windows x64 in `release/installers`,
-con nome `DuckyMovie-Setup-0.6.0-Windows-x64.exe`. Non pubblica file online.
+con nome `DuckyMovie-Setup-0.6.1-Windows-x64.exe`. Non pubblica file online.
 La guida [Pubblicare su GitHub](docs/GITHUB_RELEASES.md) descrive la prima
 pubblicazione del repository e delle Release.
 I test del motore generano brevi file multimediali e verificano i risultati con

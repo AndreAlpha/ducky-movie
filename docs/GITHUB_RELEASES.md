@@ -45,10 +45,10 @@ npm run package:installer
 Se il motore è già compilato e aggiornato, basta `npm run package:installer`.
 Il comando non crea commit, tag, push o Release online.
 
-Per la versione 0.6.0 il risultato è:
+Per la versione 0.6.1 il risultato è:
 
 ```text
-release/installers/DuckyMovie-Setup-0.6.0-Windows-x64.exe
+release/installers/DuckyMovie-Setup-0.6.1-Windows-x64.exe
 ```
 
 È un installer completo, con scelta della cartella di installazione e
@@ -68,10 +68,10 @@ di firma del codice, da tenere fuori da Git.
 
 1. Dopo aver pubblicato il commit su GitHub, apri il repository e scegli
    **Releases → Draft a new release** (oppure **Create a new release**).
-2. In **Choose a tag** crea `v0.6.0` con destinazione `main` e usa
-   `DuckyMovie 0.6.0` come titolo della Release.
+2. In **Choose a tag** crea `v0.6.1` con destinazione `main` e usa
+   `DuckyMovie 0.6.1` come titolo della Release.
 3. Scrivi una breve descrizione e trascina nella sezione degli allegati
-   **soltanto `DuckyMovie-Setup-0.6.0-Windows-x64.exe`**. Attendi la fine del caricamento.
+   **soltanto `DuckyMovie-Setup-0.6.1-Windows-x64.exe`**. Attendi la fine del caricamento.
 4. Seleziona **Set as latest release** e premi **Publish release**.
 5. Copia il collegamento dell'allegato `.exe` per condividere il download diretto.
 

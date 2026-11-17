@@ -38,6 +38,7 @@ I testi completi e gli ulteriori avvisi dei componenti si trovano nelle cartelle
 - tokenizers 0.23.1 e huggingface_hub 1.19.0 dichiarano Apache License 2.0.
 - PyAV 17.1.0 dichiara BSD-3-Clause. I binari multimediali inclusi conservano i propri avvisi.
 - PyInstaller 6.20.0 usa GPLv2-or-later con la propria eccezione per i programmi distribuiti. CPython conserva il proprio testo di licenza incluso nel runtime.
+- ModernGL 5.13.0 e glcontext 3.1.0, usati per la composizione delle immagini sulla GPU, sono distribuiti con licenza MIT. I testi sono inclusi nei metadati del motore.
 
 I moduli di elaborazione adattati da DuckyPlay sono descritti in
 `engine/ATTRIBUTION.md`. I modelli Whisper e Jina CLIP sono scaricati e conservati

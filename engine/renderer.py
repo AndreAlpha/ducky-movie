@@ -1,5 +1,6 @@
 """Native DuckyMovie project compositor using the ported DuckyPlay primitives."""
 import base64
+import contextlib
 import math
 import os
 from pathlib import Path
@@ -192,6 +193,7 @@ class Source:
         self.next_index = 0
         self.source_fps = self.cap.get(cv2.CAP_PROP_FPS) if self.cap is not None else 0
         self.fitted = None
+        self.fitted_opaque = False
         self.fixed = None
         self.position_cache = None
         self.title = _title_image(clip["title"],w,h) if clip.get("title",{} ) and clip["title"].get("text", "").strip() else None
@@ -252,6 +254,7 @@ class Source:
         if self.static is not None:
             if self.fitted is None:
                 self.fitted=self._prepare(self.static,self.static_alpha)
+                self.fitted_opaque=bool(np.all(self.fitted[1]>=1))
             frame,alpha=self.fitted
         else:
             frame=self._read(local)
@@ -264,7 +267,8 @@ class Source:
             scale=1+(amount-1)*(eased if zoom=="in" else 1-eased)
             transform=cv2.getRotationMatrix2D((w/2,h/2),0,scale)
             frame=cv2.warpAffine(frame,transform,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT)
-            alpha=cv2.warpAffine(alpha,transform,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT)
+            if not (self.static is not None and self.fitted_opaque and scale>=1):
+                alpha=cv2.warpAffine(alpha,transform,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT)
         frame=_grade(frame,clip)
         mirrored=bool(self.project.get("mirror")) ^ bool(clip.get("mirror"))
         if mirrored:
@@ -301,7 +305,8 @@ class Source:
             transform=np.array([[scale,0,x*w-scale*w/2],[0,scale,y*h-scale*h/2]],np.float32)
             frame=cv2.warpAffine(frame,transform,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT)
             alpha=cv2.warpAffine(alpha,transform,(w,h),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_CONSTANT)
-        alpha=alpha*placement.get("opacity",1)
+        if placement.get("opacity",1)!=1:
+            alpha=alpha*placement["opacity"]
         if self.static is not None and zoom=="none":
             self.fixed=(frame,alpha)
         layer=(frame,alpha*opacity if opacity!=1 else alpha)
@@ -414,6 +419,8 @@ def _prepare_overlays(project,assets,w,h):
 def _blend_layers(name,current,incoming,beta):
     current_frame,current_alpha=current
     next_frame,next_alpha=incoming
+    if np.all(current_alpha>=1) and np.all(next_alpha>=1):
+        return vm._blend_transition(name,current_frame,next_frame,beta),current_alpha
     if name in ("black","white"):
         frame=vm._blend_transition(name,current_frame,next_frame,beta)
         return frame,np.maximum(current_alpha,next_alpha)
@@ -431,6 +438,35 @@ class VideoEncodingFailure(FfmpegError):
     pass
 
 
+class GpuCompositionFailure(RuntimeError):
+    pass
+
+
+def _compose_layers(layers,w,h):
+    """Blend in native code without full-frame RGB float temporaries."""
+    frame=np.zeros((h,w,3),np.uint8)
+    for pixels,alpha in layers:
+        if np.all(alpha>=1):
+            frame=pixels.copy()
+        elif np.any(alpha>0):
+            # OpenCV rounds to the nearest byte (at most one level from the
+            # previous truncation) and parallelizes the work without allocating
+            # several 4K x RGB float32 images for each layer and frame.
+            frame=cv2.blendLinear(pixels,frame,alpha,1-alpha)
+    return frame
+
+
+def _image_motion(clip,local,duration):
+    local=max(0,min(local,duration))
+    fi,fo=clip.get("fadeIn",0),clip.get("fadeOut",0)
+    opacity=max(0,min(1,local/fi if fi else 1,(duration-local)/fo if fo else 1))
+    zoom=clip.get("zoom","none")
+    p=min(1,local/max(.001,duration))
+    eased=p*p*(3-2*p)
+    scale=1 if zoom=="none" else 1+(clip.get("zoomAmount",1.12)-1)*(eased if zoom=="in" else 1-eased)
+    return {"key":clip["id"],"scale":scale,"opacity":opacity}
+
+
 def _render_video_once(project,settings,assets,positions,duration,output,directory,progress,cancel,encoding):
     w,h=_dimensions(project["aspectRatio"],settings["resolution"])
     fps=settings["fps"]
@@ -444,16 +480,37 @@ def _render_video_once(project,settings,assets,positions,duration,output,directo
         with Image.open(frame_file) as image:
             rgba=np.asarray(image.convert("RGBA").resize((w,h),Image.Resampling.LANCZOS)).astype(np.float32)
         alpha=rgba[:,:,3:4]/255
-        frame_png=(rgba[:,:,[2,1,0]]*alpha,1-alpha)
+        frame_png=(rgba[:,:,[2,1,0]].astype(np.uint8),alpha[:,:,0])
     overlays=_prepare_overlays(project,assets,w,h)
+    gpu=None
+    encoding.composition="cpu"
+    encoding.composition_device=None
+    if settings.get("acceleration","auto")!="cpu" and not settings.get("_cpu_composition"):
+        try:
+            from gpu_compositor import ImageCompositor, unsupported_reason
+            if unsupported_reason(project,settings) is None:
+                gpu=ImageCompositor(w,h)
+                encoding.composition="gpu"
+                encoding.composition_device=gpu.label
+        except (ImportError,RuntimeError,OSError):
+            # A driver or optional graphics module can be unavailable. Keep
+            # the established CPU compositor and selected video encoder.
+            gpu=None
+    report_encoding(progress,0,encoding)
     args=[FFMPEG_EXE,"-hide_banner","-loglevel","error","-y","-f","rawvideo","-pix_fmt","bgr24","-s",f"{w}x{h}","-r",str(fps),"-i","pipe:0"]
     if ass: args += ["-vf",f"subtitles={ass.name}"]
     args += ["-an",*encoding.args,"-movflags","+faststart",str(output)]
-    encoder=subprocess.Popen(args,stdin=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(directory),creationflags=CREATE_NO_WINDOW)
+    try:
+        encoder=subprocess.Popen(args,stdin=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(directory),creationflags=CREATE_NO_WINDOW)
+    except Exception:
+        if gpu:
+            with contextlib.suppress(Exception): gpu.close()
+        raise
     errors=[]
     drain=threading.Thread(target=lambda:errors.append(encoder.stderr.read()),daemon=True)
     drain.start()
     sources={}
+    uploaded=set()
     video_tracks=[track for track in project.get("tracks",[]) if track["kind"]=="video"]
     known={track["id"] for track in video_tracks}
     for clip,_,_ in positions:
@@ -469,13 +526,26 @@ def _render_video_once(project,settings,assets,positions,duration,output,directo
         if key not in sources:
             sources[key]=Source(clip,assets[clip["assetId"]],project,w,h,end-start)
         return sources[key]
+    def gpu_layer(entry,local):
+        clip,start,end=entry
+        if clip["id"] not in uploaded:
+            item=source(entry)
+            pixels,alpha=item._prepare(item.static,item.static_alpha)
+            try:
+                gpu.add(clip["id"],pixels,alpha)
+            except Exception as error:
+                raise GpuCompositionFailure(str(error)) from error
+            uploaded.add(clip["id"])
+        return _image_motion(clip,local,end-start)
     frames=max(1,round(duration*fps))
     write_error=None
+    previous_layers=None
+    previous_scene=None
     try:
         for frame_index in range(frames):
             if cancel.is_set(): raise InterruptedError("Esportazione annullata.")
             t=frame_index/fps
-            frame=np.zeros((h,w,3),np.uint8)
+            layers=[]
             keep=set()
             for track in reversed(video_tracks):
                 if track.get("hidden"): continue
@@ -487,19 +557,33 @@ def _render_video_once(project,settings,assets,positions,duration,output,directo
                     clip,start,end=lane[index]
                     if t<start: continue
                     keep.add(clip["id"])
-                    layer=source(lane[index]).frame(t-start)
+                    layer=gpu_layer(lane[index],t-start) if gpu else source(lane[index]).frame(t-start)
                     if index+1<len(lane):
                         next_clip,next_start,next_end=lane[index+1]
                         transition=next_clip.get("transition","none")
                         span=min(float(next_clip.get("transitionDuration",.5)),(end-start)/2,(next_end-next_start)/2)
                         if transition!="none" and abs(next_start-end)<.01 and span>0 and end-t<=span:
                             keep.add(next_clip["id"])
-                            layer=_blend_layers(transition,layer,source(lane[index+1]).frame(0),(span-(end-t))/span)
-                    pixels,alpha=layer
-                    if np.all(alpha>=1):
-                        frame=pixels.copy()
-                    elif np.any(alpha>0):
-                        frame=(pixels.astype(np.float32)*alpha[:,:,None]+frame.astype(np.float32)*(1-alpha[:,:,None])).astype(np.uint8)
+                            beta=(span-(end-t))/span
+                            if gpu:
+                                layer={**layer,"incoming":gpu_layer(lane[index+1],0),"transition":transition,"beta":beta}
+                            else:
+                                layer=_blend_layers(transition,layer,source(lane[index+1]).frame(0),beta)
+                    layers.append(layer)
+            if gpu:
+                try:
+                    frame=gpu.render(layers)
+                except Exception as error:
+                    raise GpuCompositionFailure(str(error)) from error
+            else:
+                identical=previous_layers is not None and len(layers)==len(previous_layers) and all(
+                    pixels is old_pixels and alpha is old_alpha for (pixels,alpha),(old_pixels,old_alpha) in zip(layers,previous_layers))
+                if not identical:
+                    previous_scene=_compose_layers(layers,w,h)
+                    if frame_png and not overlays:
+                        previous_scene=cv2.blendLinear(frame_png[0],previous_scene,frame_png[1],1-frame_png[1])
+                    previous_layers=layers
+                frame=previous_scene.copy() if overlays else previous_scene
             for overlay in overlays:
                 if overlay["start"]<=t<overlay["end"]:
                     p=(t-overlay["start"])/max(.001,overlay["end"]-overlay["start"])
@@ -507,11 +591,12 @@ def _render_video_once(project,settings,assets,positions,duration,output,directo
                     else:
                         am,sc,dx,dy=(1,1,0,0) if overlay.get("native_animation")=="none" else vm._overlay_transform(overlay["anim"],p)
                         vm._composite_overlay(frame,overlay["bgr"],overlay["alpha"],overlay["cx"]+dx*w,overlay["cy"]+dy*h,sc,am*overlay["opacity"])
-            if frame_png: frame=(frame.astype(np.float32)*frame_png[1]+frame_png[0]).astype(np.uint8)
+            if frame_png and overlays:
+                frame=cv2.blendLinear(frame_png[0],frame,frame_png[1],1-frame_png[1])
             try:
                 # A contiguous ndarray implements the buffer protocol; avoid a
                 # full extra RGB bytes copy for every high-resolution frame.
-                encoder.stdin.write(memoryview(np.ascontiguousarray(frame)))
+                encoder.stdin.write(frame if gpu else memoryview(np.ascontiguousarray(frame)))
             except OSError as error:
                 write_error=error
                 break
@@ -519,8 +604,16 @@ def _render_video_once(project,settings,assets,positions,duration,output,directo
             for key in list(sources):
                 if key not in keep:
                     sources.pop(key).close()
+            if gpu:
+                try:
+                    gpu.release_unused(keep)
+                except Exception as error:
+                    raise GpuCompositionFailure(str(error)) from error
+                uploaded.intersection_update(keep)
     finally:
         for source in sources.values(): source.close()
+        if gpu:
+            with contextlib.suppress(Exception): gpu.close()
         try: encoder.stdin.close()
         except OSError: pass
         encoder.wait()
@@ -534,15 +627,22 @@ def _render_video_once(project,settings,assets,positions,duration,output,directo
 def _render_video(project,settings,assets,positions,duration,output,directory,progress,cancel,provided=None):
     encoding=choose_encoding(settings,provided,cancel)
     report_encoding(progress,0,encoding)
+    def render_once(choice):
+        try:
+            _render_video_once(project,settings,assets,positions,duration,output,directory,progress,cancel,choice)
+        except GpuCompositionFailure:
+            if cancel.is_set(): raise InterruptedError("Esportazione annullata.")
+            Path(output).unlink(missing_ok=True)
+            _render_video_once(project,{**settings,"_cpu_composition":True},assets,positions,duration,output,directory,progress,cancel,choice)
     try:
-        _render_video_once(project,settings,assets,positions,duration,output,directory,progress,cancel,encoding)
+        render_once(encoding)
     except VideoEncodingFailure as error:
         if encoding.encoder=="libx264" or not is_hardware_failure(error) or cancel.is_set():
             raise
         encoding=cpu_encoding(settings.get("quality","standard"),"Encoder GPU non disponibile durante la codifica; ripiego CPU.")
         Path(output).unlink(missing_ok=True)
         report_encoding(progress,0,encoding)
-        _render_video_once(project,settings,assets,positions,duration,output,directory,progress,cancel,encoding)
+        render_once(encoding)
     return encoding
 
 
