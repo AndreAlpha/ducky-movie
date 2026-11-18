@@ -28,6 +28,9 @@ import { projectDuration, validateProject } from '../src/model';
 import { formatTranscript, validateTranscript } from './transcript';
 import { protectSourceFiles } from './files';
 import { getExportCapabilities } from './encoding';
+import { StartupUpdater } from './startup-updater';
+import { cleanupStagedUpdates } from './update-download';
+import { hasUpdateAccess, readUpdateAccess, setUpdateAccess } from './update-access';
 import type { AutomationRequest, AutomationProgress, ExportSettings } from '../shared/types';
 
 if (process.env.DUCKY_TEST_USER_DATA && !app.isPackaged) {
@@ -61,6 +64,11 @@ let allowClose = false;
 let waitingForCloseSave = false;
 let closeAfterSave = false;
 let closingDialog = false;
+let updater: StartupUpdater | undefined;
+let installingUpdate = false;
+function createUpdater() {
+  return new StartupUpdater(app.getVersion(), path.join(app.getPath('userData'), 'updates'), { readToken: readUpdateAccess });
+}
 let currentProjectPath: string | undefined;
 const exports = new Map<string, ExportJob | EngineExportJob>();
 const automations = new Map<string, EngineTask>();
@@ -184,6 +192,51 @@ function registerIPC(): void {
     });
   };
   handle('app:version', () => app.getVersion());
+  handle('update:has-access', () => {
+    if (!updater) throw new Error('Disponibile nella versione Windows di DuckyMovie.');
+    return hasUpdateAccess();
+  });
+  handle('update:set-access', async (token: unknown) => {
+    if (!updater) throw new Error('Disponibile nella versione Windows di DuckyMovie.');
+    await setUpdateAccess(token);
+    updater = createUpdater();
+  });
+  handle('update:check', async () => {
+    const release = await updater?.check();
+    if (!release) return null;
+    const uninstaller = path.join(path.dirname(process.execPath), 'Uninstall DuckyMovie.exe');
+    const installed = await fs.stat(uninstaller).then(stat => stat.isFile()).catch(() => false);
+    return { version: release.version, installed };
+  });
+  handle('update:download', () => {
+    if (!updater) throw new Error('Aggiornamento non disponibile.');
+    let lastPercent = -1;
+    return updater.download(fraction => {
+      const percent = Math.floor(fraction * 100);
+      if (percent !== lastPercent && window && !window.isDestroyed()) {
+        lastPercent = percent;
+        window.webContents.send('update:progress', fraction);
+        window.setProgressBar(fraction);
+      }
+    }).finally(() => { if (window && !window.isDestroyed()) window.setProgressBar(-1); });
+  });
+  handle('update:cancel', () => updater?.cancel());
+  handle('update:install', async () => {
+    if (!updater || !window || window.isDestroyed() || allowClose || installingUpdate || closingDialog || waitingForCloseSave)
+      throw new Error('Attendi la fine dell’operazione in corso.');
+    if (dirty) throw new Error('Salva il progetto prima di aggiornare.');
+    if (exports.size || automations.size) throw new Error('Attendi il completamento dell’esportazione o dell’analisi.');
+    installingUpdate = true;
+    try {
+      await updater.install();
+      // The renderer has already saved edits. Keep recovery data available
+      // across a cancelled elevation or an interrupted Windows installation.
+      allowClose = true;
+      app.quit();
+    } finally {
+      installingUpdate = false;
+    }
+  });
   handle('export:capabilities', () => getExportCapabilities());
   handle('transcript:export', async (input: unknown, format: unknown) => {
     if (format !== 'srt' && format !== 'txt') throw new Error('Formato della trascrizione non valido.');
@@ -486,7 +539,7 @@ async function createWindow(): Promise<void> {
   window.on('close', (event) => {
     if (!allowClose) {
       event.preventDefault();
-      void requestClose();
+      if (!installingUpdate) void requestClose();
     }
   });
   const menu = Menu.buildFromTemplate([
@@ -528,7 +581,7 @@ async function createWindow(): Promise<void> {
   ]);
   Menu.setApplicationMenu(menu);
   window.setMenuBarVisibility(false);
-  if (process.env.DUCKY_DEV_URL)
+  if (!app.isPackaged && process.env.DUCKY_DEV_URL)
     await window.loadURL(process.env.DUCKY_DEV_URL);
   else await window.loadFile(path.join(__dirname, '../dist/index.html'));
 }
@@ -542,6 +595,11 @@ else {
   void app.whenReady().then(async () => {
     app.setAppUserModelId('it.duckymovie.desktop');
     store.setDataDirectory(app.getPath('userData'));
+    if (app.isPackaged && process.platform === 'win32' && process.arch === 'x64') {
+      const updateDirectory = path.join(app.getPath('userData'), 'updates');
+      updater = createUpdater();
+      void cleanupStagedUpdates(updateDirectory).catch(() => undefined);
+    }
     setCacheDirectory(path.join(app.getPath('userData'), 'media-cache'));
     configureEngine(app.getPath('userData'), app.isPackaged ? process.resourcesPath : undefined);
     registerMediaProtocol();
@@ -550,6 +608,7 @@ else {
   });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {
+    void updater?.cancel();
     for (const job of exports.values()) job.cancel();
     for (const task of automations.values()) task.cancel();
   });

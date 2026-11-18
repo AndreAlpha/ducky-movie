@@ -230,7 +230,19 @@ export interface AutomationProgress {
   error?: string;
 }
 
+export interface StartupUpdate {
+  version: string;
+  installed: boolean;
+}
+
 export interface DuckyAPI {
+  getStartupUpdate: () => Promise<StartupUpdate | null>;
+  hasUpdateAccess: () => Promise<boolean>;
+  setUpdateAccess: (token: string) => Promise<void>;
+  downloadStartupUpdate: () => Promise<void>;
+  cancelStartupUpdate: () => Promise<void>;
+  installStartupUpdate: () => Promise<void>;
+  onUpdateProgress: (callback: (fraction: number) => void) => () => void;
   importMedia: (
     paths?: string[],
   ) => Promise<{ assets: MediaAsset[]; errors: string[] }>;

@@ -55,6 +55,7 @@ import type {
   ExportProgress,
   ExportSettings,
   Project,
+  StartupUpdate,
   VideoClip,
   OverlayAnimation,
   TimelineTrack,
@@ -266,6 +267,162 @@ function Modal({
   );
 }
 
+function updateErrorMessage(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return message.replace(/^Error invoking remote method '[^']+':\s*/, '').replace(/^Error:\s*/, '');
+}
+
+function PrivateUpdateAccess({ refresh }: { refresh: () => Promise<StartupUpdate | null> }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [reading, setReading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+
+  async function readStatus() {
+    if (configured !== null || reading) return;
+    setReading(true);
+    setError('');
+    try {
+      const result = await window.ducky.hasUpdateAccess();
+      if (typeof result !== 'boolean') throw new Error('Gli aggiornamenti sono disponibili nell’app per Windows.');
+      setConfigured(result);
+    } catch (cause) {
+      setError(updateErrorMessage(cause));
+    } finally {
+      setReading(false);
+    }
+  }
+
+  async function saveAccess(remove: boolean) {
+    const field = input.current;
+    if (!field || saving || configured === null) return;
+    if (!remove && !field.value.trim()) { field.focus(); return; }
+    setSaving(true);
+    setNotice('');
+    setError('');
+    try {
+      const request = window.ducky.setUpdateAccess(remove ? '' : field.value.trim());
+      field.value = '';
+      await request;
+      setConfigured(!remove);
+      setNotice(remove ? 'Token rimosso.' : 'Token salvato. Controllo degli aggiornamenti in corso…');
+      const release = await refresh();
+      if (release) setNotice(`DuckyMovie ${release.version} è disponibile. Chiudi la guida per aggiornare.`);
+      else setNotice(remove ? 'Token rimosso.' : 'Token salvato. Nessuna nuova versione trovata.');
+    } catch (cause) {
+      setError(updateErrorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <details className="modal-intro" style={{ marginTop: 20 }}
+    onToggle={event => { if (event.currentTarget.open) void readStatus(); }}>
+    <summary style={{ cursor: 'pointer' }}>Aggiornamenti da un repository privato</summary>
+    <p className="modal-intro">Su GitHub crea un token personale di tipo <strong>fine-grained</strong>,
+      seleziona il repository <strong>AndreAlpha/ducky-movie</strong> e assegna il permesso <strong>Contents · Read-only</strong>.</p>
+    {reading && <p className="modal-intro" role="status">Verifica dell’accesso…</p>}
+    {configured !== null && <form className="new-project-form" onSubmit={event => { event.preventDefault(); void saveAccess(false); }}>
+      <label>{configured ? 'Sostituisci il token GitHub salvato' : 'Token GitHub'}
+        <input ref={input} type="password" autoComplete="off" spellCheck={false} disabled={saving} required />
+      </label>
+      <div className="modal-actions">
+        {configured && <button type="button" className="secondary-button" disabled={saving} onClick={() => void saveAccess(true)}>Rimuovi token</button>}
+        <button type="submit" className="primary-button" disabled={saving}>Salva token</button>
+      </div>
+    </form>}
+    {notice && <p className="modal-intro" role="status">{notice}</p>}
+    {error && <p className="modal-intro" role="alert">{error}</p>}
+  </details>;
+}
+
+function StartupUpdateDialog({ update, saveProject, onClose }: {
+  update: StartupUpdate;
+  saveProject: () => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [phase, setPhase] = useState<'offer' | 'saving' | 'downloading' | 'cancelling' | 'installing' | 'error'>('offer');
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+  const attempt = useRef<symbol | null>(null);
+  const downloaded = useRef(false);
+
+  useEffect(() => window.ducky.onUpdateProgress(setProgress), []);
+
+  async function start() {
+    if (attempt.current) return;
+    const token = Symbol();
+    attempt.current = token;
+    try {
+      setPhase('saving');
+      if (!(await saveProject())) {
+        onClose();
+        return;
+      }
+      if (!downloaded.current) {
+        setProgress(0);
+        setPhase('downloading');
+        await window.ducky.downloadStartupUpdate();
+        if (attempt.current !== token) return;
+        downloaded.current = true;
+      }
+      setPhase('installing');
+      await window.ducky.installStartupUpdate();
+    } catch (cause) {
+      if (attempt.current !== token) return;
+      setError(updateErrorMessage(cause));
+      setPhase('error');
+    } finally {
+      if (attempt.current === token) attempt.current = null;
+    }
+  }
+
+  async function dismiss() {
+    if (phase === 'saving' || phase === 'installing' || phase === 'cancelling') return;
+    if (phase === 'offer') { onClose(); return; }
+    attempt.current = null;
+    setPhase('cancelling');
+    try {
+      await window.ducky.cancelStartupUpdate();
+      onClose();
+    } catch (cause) {
+      setError(updateErrorMessage(cause));
+      setPhase('error');
+    }
+  }
+
+  const offer = phase === 'offer' || phase === 'error';
+  return (
+    <Modal title="Aggiornamento disponibile" descriptionId="update-description" onClose={() => void dismiss()}
+      locked={!offer && phase !== 'downloading'}>
+      <p className="modal-intro" id="update-description">
+        È disponibile <strong>DuckyMovie {update.version}</strong>. Dopo il download, DuckyMovie installerà
+        l’aggiornamento e si riaprirà automaticamente.
+        {!update.installed && ' Stai usando la versione portatile. L’aggiornamento installerà DuckyMovie su Windows. Per aprire la versione aggiornata, usa il menu Start.'}
+      </p>
+      {phase === 'error' && <p className="modal-intro" role="alert">Aggiornamento non riuscito. {error}</p>}
+      {phase === 'downloading' && <div className="export-result">
+        <progress aria-label="Download aggiornamento" value={progress} max={1} />
+        <div className="export-progress-label">Download · {Math.round(progress * 100)}%</div>
+      </div>}
+      {phase === 'saving' && <p role="status">Preparazione del progetto…</p>}
+      {phase === 'cancelling' && <p role="status">Annullamento del download…</p>}
+      {phase === 'installing' && <p role="status">Installazione e riavvio in corso…</p>}
+      {offer && <div className="modal-actions">
+        <button className="secondary-button" data-initial-focus onClick={() => void dismiss()}>Adesso no</button>
+        <button className="primary-button" onClick={() => void start()}><Download size={15} />
+          {phase === 'error' ? 'Riprova' : 'Aggiorna e riavvia'}
+        </button>
+      </div>}
+      {phase === 'downloading' && <div className="modal-actions">
+        <button className="secondary-button" onClick={() => void dismiss()}>Annulla download</button>
+      </div>}
+    </Modal>
+  );
+}
+
 export default function App() {
   const [history, dispatch] = useReducer(historyReducer, undefined, () => ({
     project: createProject('Il mio film'),
@@ -306,8 +463,10 @@ export default function App() {
     null,
   );
   const [modal, setModal] = useState<
-    'export' | 'help' | 'projects' | 'new' | 'montage' | 'shorts' | 'transcribe' | null
+    'export' | 'help' | 'projects' | 'new' | 'montage' | 'shorts' | 'transcribe' | 'update' | null
   >(null);
+  const [startupUpdate, setStartupUpdate] = useState<StartupUpdate | null>(null);
+  const updateCheck = useRef(0);
   const [automationBusy, setAutomationBusy] = useState(false);
   const [effectSelection, setEffectSelection] = useState<string>();
   const [editorGeneration, setEditorGeneration] = useState(0);
@@ -476,6 +635,27 @@ export default function App() {
     };
   }, [say]);
 
+  const refreshUpdate = useCallback(async () => {
+    const request = ++updateCheck.current;
+    setStartupUpdate(null);
+    const update = await window.ducky.getStartupUpdate();
+    if (request === updateCheck.current) setStartupUpdate(update);
+    return update;
+  }, []);
+  useEffect(() => {
+    if (!recoveryChecked) return;
+    void refreshUpdate()
+      .catch(() => { /* An unavailable release feed should not interrupt editing. */ });
+    return () => { updateCheck.current++; };
+  }, [recoveryChecked, refreshUpdate]);
+
+  useEffect(() => {
+    if (!startupUpdate || !recoveryChecked || recovery || modal || pendingAssetRemoval ||
+        busy || saving || automationBusy || exportRunning || changingProject.current) return;
+    setPlaying(false);
+    setModal('update');
+  }, [startupUpdate, recoveryChecked, recovery, modal, pendingAssetRemoval, busy, saving, automationBusy, exportRunning]);
+
   useEffect(() => {
     window.ducky.setDirty(dirty);
   }, [dirty, project, savedSnapshot]);
@@ -588,9 +768,12 @@ export default function App() {
   useEffect(
     () =>
       window.ducky.onSaveRequested(() => {
+        // The native File menu can send Ctrl+S even while a modal owns focus.
+        // Keep an explicit close-time save available when the project is dirty.
+        if (modal === 'update' && !dirty) return;
         void save();
       }),
-    [save],
+    [save, modal, dirty],
   );
   useEffect(
     () =>
@@ -1082,9 +1265,9 @@ export default function App() {
   }
 
   async function showProjects() {
+    setModal('projects');
     try {
       setRecent(await window.ducky.getRecentProjects());
-      setModal('projects');
     } catch (error) {
       say(String(error), true);
     }
@@ -1199,6 +1382,7 @@ export default function App() {
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes('Files')) {
           event.preventDefault();
+          if (modal === 'update') return;
           setDraggingFiles(true);
         }
       }}
@@ -1210,7 +1394,7 @@ export default function App() {
         if (!event.dataTransfer.files.length) return;
         event.preventDefault();
         setDraggingFiles(false);
-        if (busy) return;
+        if (busy || modal === 'update') return;
         const paths = Array.from(event.dataTransfer.files)
           .map((file) => window.ducky.getPathForFile(file))
           .filter(Boolean);
@@ -2525,6 +2709,8 @@ export default function App() {
         </div>
       )}
 
+      {modal === 'update' && startupUpdate && <StartupUpdateDialog update={startupUpdate}
+        saveProject={saveBeforeReplacing} onClose={() => { setStartupUpdate(null); setModal(null); }} />}
       {modal === 'export' && (
         <Modal
           title={
@@ -2805,6 +2991,7 @@ export default function App() {
               </div>
             ))}
           </div>
+          <PrivateUpdateAccess refresh={refreshUpdate} />
         </Modal>
       )}
       {modal === 'projects' && (

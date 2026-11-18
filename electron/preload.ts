@@ -2,6 +2,17 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DuckyAPI, ExportProgress, AutomationProgress } from '../shared/types';
 
 const api: DuckyAPI = {
+  hasUpdateAccess: () => ipcRenderer.invoke('update:has-access'),
+  setUpdateAccess: token => ipcRenderer.invoke('update:set-access', token),
+  getStartupUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadStartupUpdate: () => ipcRenderer.invoke('update:download'),
+  cancelStartupUpdate: () => ipcRenderer.invoke('update:cancel'),
+  installStartupUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateProgress: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, fraction: number) => callback(fraction);
+    ipcRenderer.on('update:progress', listener);
+    return () => ipcRenderer.removeListener('update:progress', listener);
+  },
   exportTranscript: (subtitles, format) => ipcRenderer.invoke('transcript:export', subtitles, format),
   importLegacyProject: () => ipcRenderer.invoke('project:import-legacy'),
   saveTemplate: project => ipcRenderer.invoke('template:save', project),

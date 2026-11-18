@@ -6,17 +6,28 @@ anteprima e timeline. Il montaggio e l’esportazione avvengono sul computer.
 ## Avvio su Windows
 
 Per installare DuckyMovie, scarica dalla sezione **Releases** di GitHub il file
-`DuckyMovie-Setup-0.6.2-Windows-x64.exe`, aprilo e segui la procedura guidata.
+`DuckyMovie-Setup-0.6.3-Windows-x64.exe`, aprilo e segui la procedura guidata.
 È un unico download con applicazione, FFmpeg e motore Python inclusi. I modelli
 facoltativi di trascrizione e analisi vengono scaricati al primo utilizzo.
+
+**Aggiornamenti.** Dalla 0.6.3, all’avvio DuckyMovie controlla le release
+su GitHub. Quando è disponibile una versione più recente, scegli **Aggiorna e
+riavvia** per scaricarla e installarla, oppure **Adesso no** per rimandare al
+prossimo avvio. Se usi lo ZIP, accettare l’aggiornamento installa l’app su
+Windows. Da quel momento puoi aprirla dal menu Start.
+
+Per le release private apri **Guida → Aggiornamenti da un repository privato** e
+salva un token GitHub personale con accesso in sola lettura ai contenuti di
+`AndreAlpha/ducky-movie`. Windows lo protegge per il tuo account. La stessa
+sezione permette di sostituirlo o rimuoverlo.
 
 In alternativa, puoi usare la versione ZIP portatile descritta qui sotto.
 
 Apri `Avvia DuckyMovie.cmd` nella cartella del progetto. Se la versione compilata
-è presente, il file avvia direttamente `release/0.6.2/win-unpacked/DuckyMovie.exe`.
+è presente, il file avvia direttamente `release/0.6.3/win-unpacked/DuckyMovie.exe`.
 
 Per trasferirlo su un altro PC Windows x64, estrai completamente
-`release/0.6.2/DuckyMovie-0.6.2-Windows-x64.zip` e apri `DuckyMovie.exe` nella cartella
+`release/0.6.3/DuckyMovie-0.6.3-Windows-x64.zip` e apri `DuckyMovie.exe` nella cartella
 estratta. Electron, FFmpeg, FFprobe e il motore di montaggio sono inclusi:
 non occorre installare Python sul PC di destinazione.
 
@@ -202,9 +213,9 @@ npm run test:media-removal-ui
 npm run package
 ```
 
-`npm run package` genera la cartella eseguibile e lo ZIP Windows x64 in `release/0.6.2`.
+`npm run package` genera la cartella eseguibile e lo ZIP Windows x64 in `release/0.6.3`.
 `npm run package:installer` genera un installer Windows x64 in `release/installers`,
-con nome `DuckyMovie-Setup-0.6.2-Windows-x64.exe`. Non pubblica file online.
+con nome `DuckyMovie-Setup-0.6.3-Windows-x64.exe`. Non pubblica file online.
 La guida [Pubblicare su GitHub](docs/GITHUB_RELEASES.md) descrive la prima
 pubblicazione del repository e delle Release.
 I test del motore generano brevi file multimediali e verificano i risultati con

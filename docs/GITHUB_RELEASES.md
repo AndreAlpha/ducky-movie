@@ -45,10 +45,10 @@ npm run package:installer
 Se il motore è già compilato e aggiornato, basta `npm run package:installer`.
 Il comando non crea commit, tag, push o Release online.
 
-Per la versione 0.6.2 il risultato è:
+Per la versione 0.6.3 il risultato è:
 
 ```text
-release/installers/DuckyMovie-Setup-0.6.2-Windows-x64.exe
+release/installers/DuckyMovie-Setup-0.6.3-Windows-x64.exe
 ```
 
 È un installer completo, con scelta della cartella di installazione e
@@ -68,10 +68,10 @@ di firma del codice, da tenere fuori da Git.
 
 1. Dopo aver pubblicato il commit su GitHub, apri il repository e scegli
    **Releases → Draft a new release** (oppure **Create a new release**).
-2. In **Choose a tag** crea `v0.6.2` con destinazione `main` e usa
-   `DuckyMovie 0.6.2` come titolo della Release.
+2. In **Choose a tag** crea `v0.6.3` con destinazione `main` e usa
+   `DuckyMovie 0.6.3` come titolo della Release.
 3. Scrivi una breve descrizione e trascina nella sezione degli allegati
-   **soltanto `DuckyMovie-Setup-0.6.2-Windows-x64.exe`**. Attendi la fine del caricamento.
+   **soltanto `DuckyMovie-Setup-0.6.3-Windows-x64.exe`**. Attendi la fine del caricamento.
 4. Seleziona **Set as latest release** e premi **Publish release**.
 5. Copia il collegamento dell'allegato `.exe` per condividere il download diretto.
 
@@ -87,6 +87,22 @@ Riferimenti: [creare una Release](https://docs.github.com/en/repositories/releas
 [allegati e archivi dei sorgenti](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 
 ## Versioni successive
+
+Dalla 0.6.3 l’app controlla all’avvio la release contrassegnata come **Latest**
+nel repository `AndreAlpha/ducky-movie`. Per proporre un aggiornamento,
+pubblica una release stabile con una versione superiore, ad esempio il tag
+`v0.6.4` con l’allegato `DuckyMovie-Setup-0.6.4-Windows-x64.exe`. Puoi
+continuare a distribuire il solo installer. GitHub fornisce la sua impronta
+SHA-256 e DuckyMovie la verifica prima dell’installazione. La 0.6.3 va
+installata manualmente sui PC che usano una versione precedente.
+
+Se il repository è privato, ogni persona con accesso al repository può configurare
+il proprio PC da **Guida → Aggiornamenti da un repository privato**. Su GitHub,
+scegli **Settings → Developer settings → Personal access tokens → Fine-grained
+tokens → Generate new token**. Seleziona il proprietario, limita l’accesso al
+solo repository `ducky-movie` e assegna a **Contents** il permesso **Read-only**.
+Incolla il token nel campo della guida e premi **Salva token**. DuckyMovie verifica
+l’accesso e Windows cifra la credenziale per l’utente corrente.
 
 Aggiorna `version` in `package.json` e il corrispondente `package-lock.json`.
 Se distribuisci anche lo ZIP, aggiorna il percorso `build.directories.output`
