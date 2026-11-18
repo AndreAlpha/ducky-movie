@@ -16,9 +16,10 @@ import type {
   SubtitleSource,
   LinkedSubtitleWord,
 } from '../shared/types';
+import { planMoveIntervals, type MoveInterval, type TimelineMovePlan } from './timeline-move-geometry';
 
-const MAX_DURATION = 24 * 60 * 60;
-const MIN_CLIP_DURATION = 1 / 120;
+export const MAX_DURATION = 24 * 60 * 60;
+export const MIN_CLIP_DURATION = 1 / 120;
 const MAX_ITEMS = 10000;
 const FILTERS: ColorFilter[] = ['none', 'warm', 'cool', 'mono', 'vintage', 'vivid', 'bright'];
 export const VIDEO_TRACK_ID = 'video-main';
@@ -288,6 +289,55 @@ export function moveTimelineItem(project: Project, itemId: string, kind: 'clip' 
   const order = new Map(layout.tracks.map((lane, index) => [lane.id, index]));
   clips.sort((a, b) => (order.get(a.trackId) ?? 0) - (order.get(b.trackId) ?? 0) || a.start - b.start);
   return validateProject(changed(project, { tracks: layout.tracks, clips }));
+}
+
+/** Native drags and their preview share placement rules. Property edits and
+ * keyboard nudges keep their exact-time and fixed-neighbour semantics. */
+export function planTimelineMove(project: Project, primaryId: string, kind: 'clip' | 'audio',
+    ids: readonly string[], trackId: string, requestedStart: number, pointerTime?: number): TimelineMovePlan {
+  const layout = inferredTracks(project);
+  const laneKind = kind === 'clip' ? 'video' : 'audio';
+  const tracks = layout.tracks.filter(track => track.kind === laneKind).map(track => track.id);
+  const items: MoveInterval[] = kind === 'clip'
+    ? timelinePositions(project).map(entry => ({ id: entry.clip.id, trackId: entry.trackId, start: entry.start, end: entry.end }))
+    : project.audioTracks.map(item => ({ id: item.id, trackId: layout.audio.get(item.id)!, start: item.start, end: item.start + item.out - item.in }));
+  return planMoveIntervals(items, tracks, primaryId, ids, trackId, requestedStart, MAX_DURATION, pointerTime);
+}
+
+export function applyTimelineMove(project: Project, primaryId: string, kind: 'clip' | 'audio',
+    ids: readonly string[], trackId: string, requestedStart: number, pointerTime?: number): Project {
+  const { positions } = planTimelineMove(project, primaryId, kind, ids, trackId, requestedStart, pointerTime);
+  const layout = inferredTracks(project);
+  if (kind === 'audio') {
+    if (!project.audioTracks.some(item => {
+      const pos = positions.get(item.id);
+      return pos && (Math.abs(pos.start - item.start) > .000001 || pos.trackId !== layout.audio.get(item.id));
+    })) return project;
+    const audioTracks = project.audioTracks.map(item => ({ ...item, trackId: layout.audio.get(item.id), ...positions.get(item.id) }));
+    return validateProject(changed(project, { tracks: layout.tracks, audioTracks }));
+  }
+  const entries = timelinePositions(project);
+  const affected = new Set<string>();
+  for (const entry of entries) {
+    const pos = positions.get(entry.clip.id);
+    if (pos && (Math.abs(pos.start - entry.start) > .000001 || pos.trackId !== entry.trackId)) {
+      affected.add(pos.trackId);
+      affected.add(entry.trackId);
+    }
+  }
+  if (!affected.size) return project;
+  // Materialize the original starts before changing array order. Legacy clips
+  // can derive their position from the preceding element in this array.
+  const clips = entries.map(entry => ({ ...entry.clip, trackId: entry.trackId, start: entry.start, ...positions.get(entry.clip.id) }));
+  const queues = new Map<string, typeof clips>();
+  for (const clip of clips) {
+    if (!affected.has(clip.trackId)) continue;
+    const lane = queues.get(clip.trackId) ?? [];
+    lane.push(clip);
+    queues.set(clip.trackId, lane);
+  }
+  for (const lane of queues.values()) lane.sort((a, b) => b.start - a.start);
+  return validateProject(changed(project, { tracks: layout.tracks, clips: clips.map(clip => queues.get(clip.trackId)?.pop() ?? clip) }));
 }
 
 function reflowClips(project: TimelineProject, clips: VideoClip[]): VideoClip[] {

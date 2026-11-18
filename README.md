@@ -6,17 +6,17 @@ anteprima e timeline. Il montaggio e l’esportazione avvengono sul computer.
 ## Avvio su Windows
 
 Per installare DuckyMovie, scarica dalla sezione **Releases** di GitHub il file
-`DuckyMovie-Setup-0.6.1-Windows-x64.exe`, aprilo e segui la procedura guidata.
+`DuckyMovie-Setup-0.6.2-Windows-x64.exe`, aprilo e segui la procedura guidata.
 È un unico download con applicazione, FFmpeg e motore Python inclusi. I modelli
 facoltativi di trascrizione e analisi vengono scaricati al primo utilizzo.
 
 In alternativa, puoi usare la versione ZIP portatile descritta qui sotto.
 
 Apri `Avvia DuckyMovie.cmd` nella cartella del progetto. Se la versione compilata
-è presente, il file avvia direttamente `release/0.6.1/win-unpacked/DuckyMovie.exe`.
+è presente, il file avvia direttamente `release/0.6.2/win-unpacked/DuckyMovie.exe`.
 
 Per trasferirlo su un altro PC Windows x64, estrai completamente
-`release/0.6.1/DuckyMovie-0.6.1-Windows-x64.zip` e apri `DuckyMovie.exe` nella cartella
+`release/0.6.2/DuckyMovie-0.6.2-Windows-x64.zip` e apri `DuckyMovie.exe` nella cartella
 estratta. Electron, FFmpeg, FFprobe e il motore di montaggio sono inclusi:
 non occorre installare Python sul PC di destinazione.
 
@@ -39,9 +39,16 @@ non occorre installare Python sul PC di destinazione.
   le altre clip restano al loro posto e vengono conservati gli spazi vuoti.
   Sono rimossi anche loghi, musica e sottotitoli collegati ai media eliminati.
   **Ctrl+Z** annulla l'operazione; i file originali sul computer restano intatti.
-- Aggiungi i file alla timeline con **+**, doppio clic o trascinamento.
+- Trascina uno o più media nel punto desiderato della traccia. Se lo spazio è
+  occupato, le clip successive sulla stessa traccia scorrono verso destra.
+  Se inserisci dentro una clip, viene divisa nel punto scelto. I sottotitoli
+  collegati seguono la loro sorgente. **Ctrl+Z** annulla l’intero inserimento.
+- **+** e il doppio clic inseriscono al cursore e lo portano alla fine del nuovo
+  media, così puoi costruire una sequenza con più clic.
 - Seleziona una clip e trascina i bordi per ritagliarla. Ctrl+B divide la clip al
-  cursore. Trascina le clip o usa le frecce della barra per riordinarle.
+  cursore. Trascinando una clip poco sopra una vicina, i bordi si allineano.
+  Superata la metà della vicina, la guida passa sul lato opposto. Puoi anche
+  usare le frecce della barra per riordinare le clip.
 - Nelle proprietà regola velocità, inquadratura, rotazione, colore, volume,
   dissolvenze al nero e titolo sovrapposto.
 - **+ Traccia video** e **+ Traccia audio**, sopra la timeline, aggiungono righe
@@ -54,8 +61,8 @@ non occorre installare Python sul PC di destinazione.
   La durata comprende anche l’audio e le comparse: una registrazione non viene
   troncata alla fine delle immagini. Sono supportati progetti composti solo da audio.
 - Trascina un video dalla libreria su una traccia audio per usarne soltanto
-  la colonna sonora. La clip rimane sulla traccia scelta anche se è già occupata:
-  l’editor trova la posizione libera più vicina.
+  la colonna sonora. Anche sulla traccia audio, il punto di rilascio determina
+  dove inserire il nuovo pezzo.
 - Trascina il bordo superiore della timeline per ingrandirla. Le tracce vuote
   si possono eliminare con il cestino nella loro intestazione.
 - Ctrl+rotellina ingrandisce la timeline intorno al puntatore. **Adatta** mostra
@@ -195,9 +202,9 @@ npm run test:media-removal-ui
 npm run package
 ```
 
-`npm run package` genera la cartella eseguibile e lo ZIP Windows x64 in `release/0.6.1`.
+`npm run package` genera la cartella eseguibile e lo ZIP Windows x64 in `release/0.6.2`.
 `npm run package:installer` genera un installer Windows x64 in `release/installers`,
-con nome `DuckyMovie-Setup-0.6.1-Windows-x64.exe`. Non pubblica file online.
+con nome `DuckyMovie-Setup-0.6.2-Windows-x64.exe`. Non pubblica file online.
 La guida [Pubblicare su GitHub](docs/GITHUB_RELEASES.md) descrive la prima
 pubblicazione del repository e delle Release.
 I test del motore generano brevi file multimediali e verificano i risultati con

@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { Eye, EyeOff, Film, GripVertical, Music2, Plus, Trash2, Type, Volume2, VolumeX } from 'lucide-react';
 import type { AudioTrack, Project, TimelineTrack, TimedOverlay } from '../../shared/types';
-import { clipDuration, formatDuration, getAudioTrackId, getClipTrackId, getProjectTracks, projectDuration, timelinePositions } from '../model';
+import { formatDuration, getAudioTrackId, getClipTrackId, getProjectTracks, planTimelineMove, projectDuration, timelinePositions } from '../model';
 import { captionBlocks } from '../render-effects';
+import { resolveLibraryInsertionTime } from '../library';
 import { snapTimelineDelta, type TimelineSnapResult, type TimelineSnapTarget } from '../timeline-snapping';
 import '../tracks.css';
 
@@ -14,7 +15,6 @@ export interface TimelineProps {
   zoom: number;
   onTimeChange: (time: number) => void;
   onSelect: (id: string, kind: 'clip' | 'audio') => void;
-  onReorder: (id: string, targetIndex: number) => void;
   onDropAsset: (assetId: string, index?: number, trackId?: string, time?: number) => void;
   onTrim: (id: string, inTime: number, outTime: number) => void;
   onSelectionChange?: (ids: string[]) => void;
@@ -27,7 +27,7 @@ export interface TimelineProps {
   onAddTrack?: (kind: TimelineTrack['kind']) => void;
   onTrackChange?: (id: string, patch: Partial<TimelineTrack>) => void;
   onRemoveTrack?: (id: string) => void;
-  onMoveItem?: (id: string, kind: 'clip' | 'audio', trackId: string, start: number) => void;
+  onPlaceItem: (id: string, kind: 'clip' | 'audio', ids: string[], trackId: string, requestedStart: number, pointerTime: number) => void;
   selectedTrackId?: string;
   onSelectTrack?: (id: string) => void;
   selectedEffectId?: string;
@@ -37,7 +37,6 @@ export interface TimelineProps {
   onDropAssets?: (assetIds: string[], trackId?: string, time?: number) => void;
   onDropError?: (message: string) => void;
   onZoomChange?: (zoom: number) => void;
-  onReorderGroup?: (ids: string[], targetIndex: number) => void;
   snappingEnabled?: boolean;
 }
 
@@ -65,7 +64,7 @@ function dragLeftContainer(event: DragEvent<HTMLElement>) {
 }
 
 export function Timeline(props: TimelineProps) {
-  const { project, time, selectedId, selectedIds, zoom, onTimeChange, onSelect, onDropAsset, onTrim, onSelectionChange, onMoveGroup, onDeleteSelection, onAudioChange, onAudioSplit, onSelectOverlay, onSelectSubtitle, onAddTrack, onTrackChange, onRemoveTrack, onMoveItem, selectedTrackId, onSelectTrack, selectedEffectId, onOverlayChange, onSubtitleChange, onDeleteEffect, onDropAssets, onDropError, onZoomChange, onReorderGroup, snappingEnabled = true } = props;
+  const { project, time, selectedId, selectedIds, zoom, onTimeChange, onSelect, onDropAsset, onTrim, onSelectionChange, onMoveGroup, onDeleteSelection, onAudioChange, onAudioSplit, onSelectOverlay, onSelectSubtitle, onAddTrack, onTrackChange, onRemoveTrack, onPlaceItem, selectedTrackId, onSelectTrack, selectedEffectId, onOverlayChange, onSubtitleChange, onDeleteEffect, onDropAssets, onDropError, onZoomChange, snappingEnabled = true } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<string | null>(null);
@@ -76,6 +75,7 @@ export function Timeline(props: TimelineProps) {
   const autoScrollFrameRef = useRef<number | null>(null);
   const pendingZoomRef = useRef<{ time: number; x: number } | null>(null);
   const nativeDragRef = useRef<DraggedItem | null>(null);
+  const libraryDragRef = useRef<string[]>([]);
   const magnetRef = useRef(snappingEnabled);
   const altRef = useRef(false);
   magnetRef.current = snappingEnabled;
@@ -104,6 +104,13 @@ export function Timeline(props: TimelineProps) {
   const effectSelection = Object.prototype.hasOwnProperty.call(props, 'selectedEffectId') ? selectedEffectId : localEffectId;
   const tracks = useMemo(() => getProjectTracks(project), [project]);
   const entries = useMemo(() => timelinePositions(project), [project]);
+  const dropIntervals = useMemo(() => [
+    ...entries,
+    ...project.audioTracks.map((item) => ({
+      trackId: item.trackId ?? getAudioTrackId(project, item.id),
+      start: item.start, end: item.start + item.out - item.in,
+    })),
+  ], [entries, project]);
   const assets = useMemo(() => new Map(project.assets.map((asset) => [asset.id, asset])), [project.assets]);
   const subtitleBlocks = useMemo(() => project.subtitles?.enabled ? captionBlocks(project.subtitles) : [], [project.subtitles]);
   const lanes = useMemo(() => {
@@ -235,13 +242,28 @@ export function Timeline(props: TimelineProps) {
     return () => { window.removeEventListener('keydown', modifier, true); window.removeEventListener('keyup', modifier, true); };
   }, []);
   useEffect(() => {
+    // Chromium protects the drag payload during dragover. Read the IDs while
+    // the library is starting the drag so unavailable lanes don't advertise a drop.
+    const rememberLibraryDrag = (event: globalThis.DragEvent) => {
+      const transfer = event.dataTransfer;
+      const bulk = transfer?.getData('application/x-ducky-assets');
+      const single = transfer?.getData('application/x-ducky-asset');
+      try {
+        const ids: unknown = bulk ? JSON.parse(bulk) : single ? [single] : [];
+        libraryDragRef.current = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+      } catch {
+        libraryDragRef.current = [];
+      }
+    };
     const end = () => stopAutoScroll();
-    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape' && nativeDragRef.current) stopAutoScroll(); };
+    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape' && (nativeDragRef.current || libraryDragRef.current.length)) stopAutoScroll(); };
+    window.addEventListener('dragstart', rememberLibraryDrag);
     window.addEventListener('dragend', end, true);
     window.addEventListener('drop', end);
     window.addEventListener('blur', end);
     window.addEventListener('keydown', escape, true);
     return () => {
+      window.removeEventListener('dragstart', rememberLibraryDrag);
       window.removeEventListener('dragend', end, true); window.removeEventListener('drop', end); window.removeEventListener('blur', end); window.removeEventListener('keydown', escape, true);
       autoScrollRef.current = null;
       if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
@@ -255,11 +277,17 @@ export function Timeline(props: TimelineProps) {
     const x = Math.max(GUTTER, Math.min(node.clientWidth, clientX - bounds.left - node.clientLeft));
     return Math.max(0, Math.min(86400, (node.scrollLeft + x - GUTTER) / scaleRef.current));
   }
-  function stopAutoScroll() {
-    autoScrollRef.current = null; nativeDragRef.current = null;
+  function leaveDropArea() {
+    autoScrollRef.current = null;
     if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
     autoScrollFrameRef.current = null;
-    setDraggingId(null); setDropTrack(null); setDropIndicator(null); setDragExtent(0); setSnapGuide(null);
+    setDropTrack(null); setDropIndicator(null); setSnapGuide(null);
+  }
+  function stopAutoScroll() {
+    leaveDropArea();
+    nativeDragRef.current = null;
+    libraryDragRef.current = [];
+    setDraggingId(null); setDragExtent(0);
   }
   function startAutoScroll(x: number, y: number, update?: () => void, vertical = false, extend = true) {
     autoScrollRef.current = { x, y, update, vertical, extend };
@@ -321,9 +349,12 @@ export function Timeline(props: TimelineProps) {
     let values = [id];
     if ((event?.ctrlKey || event?.metaKey) && onSelectionChange) values = selection.includes(id) ? selection.filter((value) => value !== id) : [...selection, id];
     else if (event?.shiftKey && anchorRef.current && onSelectionChange) {
-      const first = project.clips.findIndex((clip) => clip.id === anchorRef.current);
-      const last = project.clips.findIndex((clip) => clip.id === id);
-      values = project.clips.slice(Math.min(first, last), Math.max(first, last) + 1).map((clip) => clip.id);
+      const trackId = getClipTrackId(project, id);
+      const lane = entries.filter((entry) => entry.trackId === trackId).sort((a, b) => a.start - b.start);
+      const first = lane.findIndex((entry) => entry.clip.id === anchorRef.current);
+      const last = lane.findIndex((entry) => entry.clip.id === id);
+      if (first >= 0 && last >= 0) values = lane.slice(Math.min(first, last), Math.max(first, last) + 1).map((entry) => entry.clip.id);
+      else anchorRef.current = id;
     } else anchorRef.current = id;
     onSelect(id, 'clip'); onSelectionChange?.(values);
   }
@@ -351,32 +382,62 @@ export function Timeline(props: TimelineProps) {
     if (item.kind === 'clip' && !selection.includes(item.id)) { onSelect(item.id, 'clip'); onSelectionChange?.([item.id]); onTimeChange(time); }
     else if (item.kind === 'audio' && selectedId !== item.id) { onSelect(item.id, 'audio'); onTimeChange(time); }
   }
-  function insertion(item: DraggedItem, track: TimelineTrack, clientX: number, proposedStart?: number) {
-    if (item.kind !== 'clip' || track.kind !== 'video' || item.trackId !== track.id) return null;
-    const chosen = entries.filter((entry) => item.ids.includes(entry.clip.id));
-    if (!chosen.length || chosen.some((entry) => entry.trackId !== track.id)) return null;
-    const others = entries.filter((entry) => entry.trackId === track.id && !item.ids.includes(entry.clip.id)).sort((first, second) => first.start - second.start);
-    const start = proposedStart ?? Math.max(0, timeAt(clientX) - (item.grabOffset ?? 0));
-    const delta = start - item.start;
-    const collision = chosen.some((entry) => others.some((candidate) => candidate.start < entry.end + delta - .000001 && candidate.end > entry.start + delta + .000001));
-    if (!collision || item.ids.length > 1 && !onReorderGroup) return null;
-    const found = others.findIndex((entry) => timeAt(clientX) < (entry.start + entry.end) / 2);
-    const index = found < 0 ? others.length : found;
-    return { index, time: others[index]?.start ?? others.at(-1)?.end ?? 0 };
+  function acceptsDrop(track: TimelineTrack) {
+    const item = nativeDragRef.current;
+    if (item) return track.kind === (item.kind === 'audio' ? 'audio' : 'video');
+    const ids = libraryDragRef.current;
+    return !ids.length || ids.some((id) => {
+      const asset = assets.get(id);
+      return asset && !asset.missing && (track.kind === 'video' ? asset.kind !== 'audio' : asset.kind === 'audio' || asset.hasAudio);
+    });
   }
   function updateDropIndicator(track: TimelineTrack, clientX: number) {
     const item = nativeDragRef.current;
-    const placement = item ? nativePlacement(item, clientX) : { result: snapEdges([0], timeAt(clientX), [], false, 0, 86400), start: 0 };
-    const insert = item ? insertion(item, track, clientX, placement.start) : null;
-    showSnap(insert ? undefined : placement.result);
-    setDropIndicator({ trackId: track.id, time: insert?.time ?? (item ? placement.start : placement.result.delta), insert: !!insert });
+    const pointerTime = timeAt(clientX);
+    if (!item) {
+      const result = snapEdges([0], pointerTime, [], false, 0, 86400);
+      const crossing = dropIntervals.find((entry) => entry.trackId === track.id && entry.start < result.delta && entry.end > result.delta);
+      const insertionTime = resolveLibraryInsertionTime(result.delta, crossing);
+      showSnap(insertionTime === result.delta ? result : undefined);
+      setDropIndicator({ trackId: track.id, time: insertionTime, insert: true });
+      return;
+    }
+    const placement = nativePlacement(item, clientX);
+    try {
+      const plan = planTimelineMove(project, item.id, item.kind, item.ids, track.id, placement.start, pointerTime);
+      // Only show a magnet target if the collision resolution actually keeps it.
+      showSnap(Math.abs(plan.start - placement.start) < .000001 ? placement.result : undefined);
+      setDropIndicator({ trackId: track.id, time: plan.start, insert: plan.displaced });
+    } catch {
+      setDropIndicator(null);
+      showSnap();
+    }
   }
   function allowDrop(event: DragEvent<HTMLDivElement>, track: TimelineTrack) {
-    if (!event.dataTransfer.types.some((type) => ['application/x-ducky-item', 'application/x-ducky-asset', 'application/x-ducky-assets', 'application/x-ducky-clip'].includes(type))) return;
-    event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = event.dataTransfer.types.includes('application/x-ducky-asset') || event.dataTransfer.types.includes('application/x-ducky-assets') ? 'copy' : 'move'; setDropTrack(track.id);
+    const types = event.dataTransfer.types;
+    if (!types.some((type) => ['application/x-ducky-item', 'application/x-ducky-asset', 'application/x-ducky-assets', 'application/x-ducky-clip'].includes(type))) return;
+    if (!acceptsDrop(track)) {
+      event.dataTransfer.dropEffect = 'none';
+      leaveDropArea();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = types.includes('application/x-ducky-asset') || types.includes('application/x-ducky-assets') ? 'copy' : 'move';
+    setDropTrack(track.id);
     altRef.current = event.altKey;
-    const x = event.clientX;
-    updateDropIndicator(track, x); startAutoScroll(x, event.clientY, () => updateDropIndicator(track, x), true);
+    const { clientX, clientY } = event;
+    updateDropIndicator(track, clientX);
+    startAutoScroll(clientX, clientY, () => {
+      const lane = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-track-id]');
+      const hovered = tracks.find((candidate) => candidate.id === lane?.dataset.trackId);
+      if (hovered && acceptsDrop(hovered)) {
+        setDropTrack(hovered.id);
+        updateDropIndicator(hovered, clientX);
+      } else {
+        setDropTrack(null); setDropIndicator(null); showSnap();
+      }
+    }, true);
   }
   function drop(event: DragEvent<HTMLDivElement>, track: TimelineTrack) {
     const raw = event.dataTransfer.getData('application/x-ducky-item');
@@ -412,17 +473,7 @@ export function Timeline(props: TimelineProps) {
     if (item.kind === 'clip' && track.kind !== 'video' || item.kind === 'audio' && track.kind !== 'audio') { stopAutoScroll(); return; }
     try {
       const placement = nativePlacement(item, event.clientX);
-      const insert = insertion(item, track, event.clientX, placement.start);
-      if (insert) {
-        if (item.ids.length > 1) onReorderGroup?.(item.ids, insert.index);
-        else props.onReorder(item.id, insert.index);
-        stopAutoScroll(); return;
-      }
-      const start = placement.start;
-      if (item.ids.length > 1 && item.kind === 'clip' && item.trackId === track.id && onMoveGroup) onMoveGroup(item.ids, start - item.start);
-      else if (onMoveItem) onMoveItem(item.id, item.kind, track.id, start);
-      else if (item.kind === 'audio') onAudioChange?.(item.id, { trackId: track.id, start });
-      else onMoveGroup?.([item.id], start - item.start);
+      onPlaceItem(item.id, item.kind, item.ids, track.id, placement.start, dropTime);
     } catch (error) { reportDropFailure(error); }
     stopAutoScroll();
   }
@@ -597,7 +648,7 @@ export function Timeline(props: TimelineProps) {
   }}>
     {dropFailure && !onDropError && <div className="timeline-drop-error" role="alert"><span>{dropFailure}</span><button type="button" aria-label="Chiudi messaggio timeline" onClick={() => setDropFailure(null)}>×</button></div>}
     <div className="timeline-tracks-bar"><button className="secondary-button" aria-label="Aggiungi traccia video" onClick={() => onAddTrack?.('video')} disabled={!onAddTrack}><Plus size={14} /><Film size={14} /> Traccia video</button><button className="secondary-button" aria-label="Aggiungi traccia audio" onClick={() => onAddTrack?.('audio')} disabled={!onAddTrack}><Plus size={14} /><Music2 size={14} /> Traccia audio</button><span>Trascina le clip tra le tracce · Ctrl/Shift per selezionare più clip</span></div>
-    <div className="timeline-scroll" ref={scrollRef} onDragLeave={(event) => { if (dragLeftContainer(event)) stopAutoScroll(); }} onScroll={(event) => { const node = event.currentTarget; setViewport({ left: node.scrollLeft, top: node.scrollTop, width: node.clientWidth, height: node.clientHeight }); }}>
+    <div className="timeline-scroll" ref={scrollRef} onDragLeave={(event) => { if (dragLeftContainer(event)) leaveDropArea(); }} onScroll={(event) => { const node = event.currentTarget; setViewport({ left: node.scrollLeft, top: node.scrollTop, width: node.clientWidth, height: node.clientHeight }); }}>
       <div className="timeline-canvas" ref={canvasRef} data-timeline-gutter={GUTTER} tabIndex={-1} style={{ width: canvasWidth, minWidth: '100%', height: canvasHeight, position: 'relative' }}>
         <div className="timeline-ruler" tabIndex={0} role="slider" aria-label="Cursore della timeline" aria-orientation="horizontal" aria-valuemin={0} aria-valuemax={duration} aria-valuenow={time} aria-valuetext={`${time.toFixed(2)} secondi`} style={{ height: 30, position: 'sticky', top: 0, zIndex: 8, touchAction: 'none' }} onPointerDown={scrubStart} onPointerMove={scrubMove} onPointerUp={scrubEnd} onPointerCancel={scrubEnd}>
           <span className="timeline-gutter-label" style={{ width: GUTTER, zIndex: 3 }} onPointerDown={(event) => event.stopPropagation()}>TEMPO</span>
@@ -608,7 +659,12 @@ export function Timeline(props: TimelineProps) {
           const videoItems = track.kind === 'video' ? entries.filter((entry) => entry.trackId === track.id) : [];
           const audioItems = track.kind === 'audio' ? project.audioTracks.filter((item) => (item.trackId ?? getAudioTrackId(project, item.id)) === track.id) : [];
           const empty = !videoItems.length && !audioItems.length;
-          return <div key={track.id} className={`timeline-track-lane ${track.kind === 'video' ? 'timeline-video-lane' : 'timeline-audio-lane'}${dropTrack === track.id ? ' drop-target' : ''}${track.hidden ? ' track-hidden' : ''}${selectedTrackId === track.id ? ' track-selected' : ''}`} data-track-id={track.id} data-track-kind={track.kind} style={{ position: 'absolute', top, left: 0, right: 0, height }} onDragOver={(event) => allowDrop(event, track)} onDragLeave={(event) => { if (dragLeftContainer(event)) { setDropTrack(null); setDropIndicator(null); } }} onDrop={(event) => drop(event, track)} onPointerDown={(event) => { if (event.target === event.currentTarget) { onSelectTrack?.(track.id); scrubStart(event); } }} onPointerMove={scrubMove} onPointerUp={scrubEnd} onPointerCancel={scrubEnd}>
+          return <div key={track.id} className={`timeline-track-lane ${track.kind === 'video' ? 'timeline-video-lane' : 'timeline-audio-lane'}${dropTrack === track.id ? ' drop-target' : ''}${track.hidden ? ' track-hidden' : ''}${selectedTrackId === track.id ? ' track-selected' : ''}`} data-track-id={track.id} data-track-kind={track.kind} style={{ position: 'absolute', top, left: 0, right: 0, height }} onDragEnter={(event) => allowDrop(event, track)} onDragOver={(event) => allowDrop(event, track)} onDragLeave={(event) => {
+              if (!dragLeftContainer(event)) return;
+              // A previous lane may receive dragleave after the next lane has handled dragenter.
+              const hovered = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-track-id]');
+              if (!hovered || !canvasRef.current?.contains(hovered)) leaveDropArea();
+            }} onDrop={(event) => drop(event, track)} onPointerDown={(event) => { if (event.target === event.currentTarget) { onSelectTrack?.(track.id); scrubStart(event); } }} onPointerMove={scrubMove} onPointerUp={scrubEnd} onPointerCancel={scrubEnd}>
             {(draggingId || dropTrack) && <div className="timeline-native-drop-surface" aria-hidden="true" style={{ left: GUTTER }} />}
             <div className="timeline-track-header" style={{ width: GUTTER }} onClick={() => onSelectTrack?.(track.id)} onFocusCapture={() => onSelectTrack?.(track.id)}>
               <div className="track-name-row">{track.kind === 'video' ? <Film size={14} /> : <Music2 size={14} />}<input aria-label={`Nome traccia ${track.name}`} title="Doppio clic o F2 per rinominare" readOnly={editingTrack !== track.id} onDoubleClick={() => setEditingTrack(track.id)} key={`${track.id}:${track.name}`} defaultValue={track.name} maxLength={80} onBlur={(event) => { const name = event.target.value.trim() || track.name; if (name !== track.name) onTrackChange?.(track.id, { name }); setEditingTrack(null); }} onKeyDown={(event) => { if (event.key === 'F2') { event.preventDefault(); setEditingTrack(track.id); event.currentTarget.select(); } if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } if (event.key === 'Escape') { event.currentTarget.value = track.name; event.currentTarget.blur(); } event.stopPropagation(); }} /></div>
@@ -649,7 +705,21 @@ export function Timeline(props: TimelineProps) {
             </button>;
           })}
         </div>)}
-        {dropIndicator && lanes.find((lane) => lane.track.id === dropIndicator.trackId) && (() => { const lane = lanes.find((lane) => lane.track.id === dropIndicator.trackId)!; return <div className={`timeline-placement-indicator${dropIndicator.insert ? ' inserting' : ''}`} style={{ position: 'absolute', left: GUTTER + dropIndicator.time * pixelsPerSecond, top: lane.top, height: lane.height, visibility: GUTTER + dropIndicator.time * pixelsPerSecond - viewport.left >= GUTTER ? 'visible' : 'hidden' }}><span>{dropIndicator.insert ? 'Inserisci qui' : `${dropIndicator.time.toFixed(2)} s`}</span></div>; })()}
+        {dropIndicator && (() => {
+          const lane = lanes.find((entry) => entry.track.id === dropIndicator.trackId);
+          const left = GUTTER + dropIndicator.time * pixelsPerSecond;
+          const viewportX = left - viewport.left;
+          if (!lane || viewportX < GUTTER || viewportX > viewport.width) return null;
+          return <div
+            className={`timeline-placement-indicator${dropIndicator.insert ? ' inserting' : ''}`}
+            data-drop-time={dropIndicator.time}
+            style={{ position: 'absolute', left, top: lane.top, height: lane.height }}
+          >
+            <span className={viewportX > viewport.width - 130 ? 'align-left' : undefined}>
+              {dropIndicator.insert ? 'Inserisci · ' : ''}{dropIndicator.time.toFixed(2)} s
+            </span>
+          </div>;
+        })()}
         {snapGuide && snappingEnabled && <div className="timeline-snap-guide" data-snap-time={snapGuide.time} style={{ left: GUTTER + snapGuide.time * pixelsPerSecond, visibility: GUTTER + snapGuide.time * pixelsPerSecond - viewport.left >= GUTTER && GUTTER + snapGuide.time * pixelsPerSecond - viewport.left <= viewport.width ? 'visible' : 'hidden' }}><span className={`timeline-snap-label${GUTTER + snapGuide.time * pixelsPerSecond - viewport.left > viewport.width - 200 ? ' align-left' : ''}`} role="status" aria-live="polite" aria-atomic="true">Aggancio · {snapGuide.label} · {snapGuide.time.toFixed(2)} s</span></div>}
         <div className="timeline-playhead" style={{ position: 'absolute', left: GUTTER + time * pixelsPerSecond, top: 30, bottom: 12, pointerEvents: 'none', zIndex: 5, visibility: GUTTER + time * pixelsPerSecond - viewport.left >= GUTTER && GUTTER + time * pixelsPerSecond - viewport.left <= viewport.width ? 'visible' : 'hidden' }} />
       </div>

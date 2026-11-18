@@ -74,7 +74,11 @@ try{
  await page.getByRole('button',{name:'Torna all’inizio · Home',exact:true}).click();
  await page.getByRole('button',{name:'Aggiungi Sfondo rosso.png al film',exact:true}).click();
  await page.getByRole('button',{name:'Aggiungi traccia video',exact:true}).click();
+ await page.getByRole('button',{name:'Torna all’inizio · Home',exact:true}).click();
  await page.getByRole('button',{name:'Aggiungi Riquadro blu.png al film',exact:true}).click();
+ // Both layers start at zero. Seek inside their overlap after button insertion
+ // advances the playhead, so the preview assertion samples both at once.
+ await page.getByRole('button',{name:'Torna all’inizio · Home',exact:true}).click();
  await page.getByLabel('Dimensione sullo schermo',{exact:true}).press('Home');
  for(let index=0;index<35;index++)await page.getByLabel('Dimensione sullo schermo',{exact:true}).press('ArrowRight');
  project=await save(projectFile);assert.equal(new Set(project.clips.map(clip=>clip.trackId)).size,2);assert.equal(project.clips[1].placement?.scale,.4);

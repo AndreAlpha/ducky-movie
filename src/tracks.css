@@ -47,7 +47,8 @@
 .timeline-ruler-ticks { overflow: hidden; }
 .timeline-placement-indicator { z-index: 7; width: 2px; background: #8abcb0; pointer-events: none; box-shadow: 0 0 5px #8abcb066; }
 .timeline-placement-indicator.inserting { width: 3px; background: #edc364; box-shadow: 0 0 7px #edc36488; }
-.timeline-placement-indicator > span { position: absolute; top: 2px; left: 5px; background: #182329; color: #c6eee2; border: 1px solid #506e6b; border-radius: 3px; padding: 3px 5px; font-size: 9px; white-space: nowrap; }
+.timeline-placement-indicator > span { position: absolute; bottom: 2px; left: 5px; background: #182329; color: #c6eee2; border: 1px solid #506e6b; border-radius: 3px; padding: 3px 5px; font-size: 9px; white-space: nowrap; }
+.timeline-placement-indicator > .align-left { left: auto; right: 5px; }
 .timeline-placement-indicator.inserting > span { background: #342b19; color: #f7dda0; border-color: #8d7545; }
 .timeline-drop-error { display: flex; align-items: center; gap: 12px; padding: 6px 14px; background: #472d2b; color: #f4c6bd; font-size: 11px; }
 .timeline-drop-error > button { margin-left: auto; padding: 0 4px; background: transparent; color: inherit; font-size: 19px; }

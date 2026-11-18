@@ -1,6 +1,6 @@
 {
   "name": "duckymovie",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "description": "Un editor video semplice e locale per Windows",
@@ -53,7 +53,7 @@
     "productName": "DuckyMovie",
     "afterPack": "scripts/after-pack.cjs",
     "directories": {
-      "output": "release/0.6.1"
+      "output": "release/0.6.2"
     },
     "files": [
       "dist/**/*",

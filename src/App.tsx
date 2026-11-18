@@ -62,7 +62,6 @@ import type {
 } from '../shared/types';
 import {
   addAssets,
-  appendAsset,
   canonicalMediaPath,
   clipDuration,
   createClip,
@@ -73,7 +72,7 @@ import {
   getAudioTrackId,
   addTimelineTrack,
   removeTimelineTrack,
-  moveTimelineItem,
+  applyTimelineMove,
   setProjectCap,
   removeProjectCap,
   updateAudioTrack,
@@ -82,7 +81,6 @@ import {
   formatDuration,
   formatTimecode,
   moveClip,
-  moveClips,
   projectDuration,
   removeClips,
   removeAssets,
@@ -363,7 +361,10 @@ export default function App() {
     selectedType === 'audio'
       ? project.audioTracks.find((track) => track.id === selectedId)
       : undefined;
-  const selectedLaneClips = selectedClip ? project.clips.filter(clip=>getClipTrackId(project,clip.id)===getClipTrackId(project,selectedClip.id)) : [];
+  const selectedVideoLane = selectedClip && getClipTrackId(project, selectedClip.id);
+  const selectedLaneClips = selectedVideoLane ? timelinePositions(project)
+    .filter(entry => entry.trackId === selectedVideoLane)
+    .sort((a, b) => a.start - b.start).map(entry => entry.clip) : [];
   const selectedAsset = project.assets.find(
     (asset) => asset.id === (selectedClip?.assetId ?? selectedAudio?.assetId),
   );
@@ -645,42 +646,6 @@ export default function App() {
     [edit, say],
   );
 
-  function addToTimeline(assetId: string, index?: number, targetTrackId?: string, at?: number) {
-    try {
-      const asset = project.assets.find((item) => item.id === assetId);
-      const lane = targetTrackId ?? getProjectTracks(project).find(track=>track.id===activeTrackId && track.kind===(asset?.kind==='audio'?'audio':'video'))?.id;
-      let next = appendAsset(project, assetId, at ?? time, lane);
-      if (next.clips.length > project.clips.length) {
-        const clip = next.clips[next.clips.length - 1];
-        if (!clip) return;
-        if (at !== undefined && lane) next = moveTimelineItem(next,clip.id,'clip',lane,at);
-        else if (index !== undefined) next = moveClip(next, clip.id, index);
-        setSelectedId(clip.id);
-        setSelectedType('clip');
-        setSelectedIds([clip.id]);
-        setActiveTrackId(getClipTrackId(next,clip.id));
-        const position = timelinePositions(next).find(
-          (entry) => entry.clip.id === clip.id,
-        );
-        if (position) setTime(position.start);
-      } else {
-        const track = next.audioTracks[next.audioTracks.length - 1];
-        if (track) {
-          setSelectedId(track.id);
-          setSelectedType('audio');
-          setSelectedIds([]);
-          setActiveTrackId(getAudioTrackId(next,track.id));
-          setTime(track.start);
-        }
-      }
-      setSourceAssetId(null);
-      setPlaying(false);
-      edit(next);
-    } catch (error) {
-      say(error instanceof Error ? error.message : String(error), true);
-    }
-  }
-
   function selectLibraryAsset(assetId:string,event?:Pick<ReactMouseEvent,'ctrlKey'|'metaKey'|'shiftKey'>) {
     let selection=[assetId];
     if (event?.shiftKey&&assetAnchor.current) {
@@ -693,17 +658,39 @@ export default function App() {
     setSourceAssetId(assetId);setSourceTime(0);
   }
 
-  function addLibrarySelection(assetIds=selectedAssetIds,trackId?:string,at=time) {
+  function addLibrarySelection(assetIds = selectedAssetIds, trackId?: string, dropTime?: number) {
     try {
-      const active=getProjectTracks(currentProject.current).find(track=>track.id===activeTrackId);
-      const preferred=trackId??(active?.kind==='video'||assetIds.every(id=>currentProject.current.assets.find(asset=>asset.id===id)?.kind==='audio')?active?.id:undefined);
-      const result=insertLibraryAssets(currentProject.current,assetIds,at,preferred);
-      if(result.project===currentProject.current)return;
-      edit(result.project);setSourceAssetId(null);setPlaying(false);setEffectSelection(undefined);
-      if(result.clipIds.length){const id=result.clipIds[0];setSelectedId(id);setSelectedType('clip');setSelectedIds(result.clipIds);setActiveTrackId(getClipTrackId(result.project,id));setTime(timelinePositions(result.project).find(entry=>entry.clip.id===id)!.start);}
-      else if(result.audioIds.length){const id=result.audioIds[0];setSelectedId(id);setSelectedType('audio');setSelectedIds([]);setActiveTrackId(getAudioTrackId(result.project,id));setTime(result.project.audioTracks.find(track=>track.id===id)!.start);}
-      say(`${result.clipIds.length+result.audioIds.length} media aggiunti alla timeline`);
-    }catch(error){say(error instanceof Error?error.message:String(error),true);}
+      const base = currentProject.current;
+      const active = getProjectTracks(base).find(track => track.id === activeTrackId);
+      const audioOnly = assetIds.every(id => base.assets.find(asset => asset.id === id)?.kind === 'audio');
+      const preferred = trackId ?? (active?.kind === 'video' || audioOnly ? active?.id : undefined);
+      const result = insertLibraryAssets(base, assetIds, dropTime ?? time, preferred);
+      if (result.project === base) return;
+
+      edit(result.project);
+      setSourceAssetId(null);
+      setPlaying(false);
+      setEffectSelection(undefined);
+      const videoIds = new Set(result.clipIds);
+      const audioIds = new Set(result.audioIds);
+      const spans = [
+        ...timelinePositions(result.project).filter(entry => videoIds.has(entry.clip.id)),
+        ...result.project.audioTracks.filter(audio => audioIds.has(audio.id)).map(audio => ({
+          start: audio.start, end: audio.start + audio.out - audio.in,
+        })),
+      ];
+      const firstClip = result.clipIds[0];
+      const id = firstClip ?? result.audioIds[0];
+      setSelectedId(id);
+      setSelectedType(firstClip ? 'clip' : 'audio');
+      setSelectedIds(result.clipIds);
+      setActiveTrackId(firstClip ? getClipTrackId(result.project, id) : getAudioTrackId(result.project, id));
+      // Repeated button insertions build a sequence. For a mouse drop, show its first frame.
+      setTime(dropTime === undefined ? Math.max(...spans.map(span => span.end)) : Math.min(...spans.map(span => span.start)));
+      say(spans.length === 1 ? 'Media aggiunto alla timeline' : `${spans.length} media aggiunti alla timeline`);
+    } catch (error) {
+      say(error instanceof Error ? error.message : String(error), true);
+    }
   }
 
   function removeLibrarySelection(ids: readonly string[]) {
@@ -1467,7 +1454,7 @@ export default function App() {
                           }}
                           onClick={event => selectLibraryAsset(asset.id,event)}
                           onDoubleClick={event =>
-                            !asset.missing && !event.ctrlKey && !event.metaKey && !event.shiftKey && addToTimeline(asset.id)
+                            !asset.missing && !event.ctrlKey && !event.metaKey && !event.shiftKey && addLibrarySelection([asset.id])
                           }
                         >
                           {asset.thumbnail ? (
@@ -1506,7 +1493,7 @@ export default function App() {
                             title={`Aggiungi ${asset.name} al film`}
                             aria-label={`Aggiungi ${asset.name} al film`}
                             disabled={asset.missing}
-                            onClick={() => addToTimeline(asset.id)}
+                            onClick={() => addLibrarySelection([asset.id])}
                           >
                             <Plus size={14} />
                           </button>
@@ -1815,7 +1802,7 @@ export default function App() {
               <span title={sourceAsset?.name}>{sourceAsset?.name}</span>
               <button
                 className="text-button"
-                onClick={() => sourceAsset && addToTimeline(sourceAsset.id)}
+                onClick={() => sourceAsset && addLibrarySelection([sourceAsset.id])}
               >
                 <Plus size={14} /> Aggiungi al film
               </button>
@@ -2457,7 +2444,17 @@ export default function App() {
           onAddTrack={(kind)=>{const next=addTimelineTrack(project,kind);const previous=new Set(getProjectTracks(project).map(track=>track.id));const track=getProjectTracks(next).find(track=>!previous.has(track.id));edit(next);if(track)setActiveTrackId(track.id);}}
           onTrackChange={(id,patch)=>edit({...project,tracks:getProjectTracks(project).map(track=>track.id===id?{...track,...patch}:track)})}
           onRemoveTrack={(id)=>{try{edit(removeTimelineTrack(project,id));}catch(error){say(String(error),true);}}}
-          onMoveItem={(id,kind,trackId,start)=>{try{edit(moveTimelineItem(project,id,kind,trackId,start));setActiveTrackId(trackId);}catch(error){say(String(error),true);}}}
+          onPlaceItem={(id, kind, ids, trackId, start, pointerTime) => {
+            try {
+              const base = currentProject.current;
+              const next = applyTimelineMove(base, id, kind, ids, trackId, start, pointerTime);
+              if (next !== base) edit(next);
+              setPlaying(false);
+              setActiveTrackId(trackId);
+            } catch (error) {
+              say(error instanceof Error ? error.message : String(error), true);
+            }
+          }}
           time={time}
           selectedId={selectedId}
           selectedIds={selectedIds}
@@ -2479,15 +2476,7 @@ export default function App() {
             setTime(value);
           }}
           onSelect={selectTimeline}
-          onReorder={(id, index) => {
-            setPlaying(false);
-            edit(moveClip(project, id, index));
-          }}
-          onReorderGroup={(ids, index) => {
-            setPlaying(false);
-            edit(moveClips(project, ids, index));
-          }}
-          onDropAsset={addToTimeline}
+          onDropAsset={(id, _index, trackId, at) => addLibrarySelection([id], trackId, at)}
           onDropAssets={addLibrarySelection}
           onDropError={message=>say(message,true)}
           onZoomChange={setZoom}
@@ -2759,9 +2748,9 @@ export default function App() {
           wide
         >
           <p className="modal-intro">
-            Importa i tuoi media, aggiungili al film con il pulsante + o
-            trascinandoli nella timeline. Seleziona una clip per modificarla
-            nelle proprietà.
+            Trascina un media nel punto in cui vuoi inserirlo, oppure posiziona
+            il cursore e premi +. Le clip successive sulla traccia si spostano
+            quanto basta per fargli spazio.
           </p>
           <div className="help-tips">
             <div>

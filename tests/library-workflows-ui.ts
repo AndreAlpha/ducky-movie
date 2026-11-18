@@ -39,6 +39,32 @@ try{
  await page.getByRole('button',{name:'Aggiungi selezione alla timeline',exact:true}).click();await expect(page.locator('.timeline-clip')).toHaveCount(3);
  await page.keyboard.press('Control+z');await expect(page.locator('.timeline-clip')).toHaveCount(0);
  await page.keyboard.press('Control+y');await expect(page.locator('.timeline-clip')).toHaveCount(3);
+ // Insert a single item on the seam of a packed lane through the real editor.
+ const lane = page.locator('.timeline-video-lane').first();
+ const timelineLayout = () => lane.locator('.timeline-clip').evaluateAll(clips => clips.map(clip => ({
+   name: clip.getAttribute('aria-label')!.split(',')[0],
+   start: (parseFloat((clip as HTMLElement).style.left) - 186) / 26,
+ })).sort((left, right) => left.start - right.start));
+ await c.click();
+ await c.dragTo(lane, { targetPosition: { x: 186 + 5 * 26, y: 45 } });
+ await expect.poll(timelineLayout).toEqual([
+   { name: 'A.png', start: 0 }, { name: 'C.png', start: 5 },
+   { name: 'B.png', start: 10 }, { name: 'C.png', start: 15 },
+ ]);
+ await page.keyboard.press('Control+z');
+ await expect(lane.locator('.timeline-clip')).toHaveCount(3);
+ // Button additions follow the manually positioned playhead, then advance it
+ // so the next press continues immediately after the media just inserted.
+ await page.getByRole('button',{name:'Torna all’inizio · Home',exact:true}).click();
+ await page.getByRole('button',{name:'Aggiungi B.png al film',exact:true}).click();
+ await expect(page.getByRole('slider',{name:'Cursore della timeline'})).toHaveAttribute('aria-valuenow','5');
+ await c.dblclick();
+ await expect.poll(timelineLayout).toEqual([
+   { name: 'B.png', start: 0 }, { name: 'C.png', start: 5 }, { name: 'A.png', start: 10 },
+   { name: 'B.png', start: 15 }, { name: 'C.png', start: 20 },
+ ]);
+ await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+ await expect(lane.locator('.timeline-clip')).toHaveCount(3);
  await a.click();await b.click({modifiers:['Control']});
  await a.dragTo(page.locator('.timeline-video-lane').first(),{targetPosition:{x:186+17*26,y:45}});
  await expect(page.locator('.timeline-clip')).toHaveCount(5);

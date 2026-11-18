@@ -2,6 +2,10 @@
 setlocal
 cd /d "%~dp0"
 set ELECTRON_RUN_AS_NODE=
+if exist "release\0.6.2\win-unpacked\DuckyMovie.exe" (
+  start "" "release\0.6.2\win-unpacked\DuckyMovie.exe"
+  exit /b 0
+)
 if exist "release\0.6.1\win-unpacked\DuckyMovie.exe" (
   start "" "release\0.6.1\win-unpacked\DuckyMovie.exe"
   exit /b 0

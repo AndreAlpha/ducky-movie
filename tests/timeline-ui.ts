@@ -12,6 +12,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Timeline,TIMELINE_GUTTER,MIN_TIMELINE_ZOOM,MAX_TIMELINE_ZOOM} from './src/components/Timeline';
 import * as m from './src/model';
+import {insertLibraryAssets} from './src/library';
 import './src/styles.css';
 const video={id:'asset-v',name:'Fixture video',path:'C:/fixture/video.mp4',url:'',kind:'video',duration:5,width:320,height:180,hasAudio:true};
 const audio={...video,id:'asset-a',name:'Fixture audio',path:'C:/fixture/audio.wav',kind:'audio'};
@@ -27,10 +28,10 @@ function Harness(){
  const current=useRef(p),throwGroup=useRef(false),commits=useRef(0);current.current=p;
  function edit(next){commits.current++;const synchronized=m.syncLinkedSubtitles(current.current,next);current.current=synchronized;setP(synchronized);}
  function reset(){current.current=initial;setP(initial);setTime(0);setZoom(26);setSelected(null);setSelection([]);setEffect(undefined);setErrors([]);setBulk(null);setSnapping(true);throwGroup.current=false;commits.current=0;}
- function snapFixture(){throwGroup.current=false;setErrors([]);const next={...initial,assets:initial.assets.map(a=>({...a,duration:30})),clips:[{...m.createClip(video),id:'c0',in:1,out:4,start:2},{...m.createClip(video),id:'c1',in:1,out:3,start:8},{...m.createClip(video),id:'target',start:20}],audioTracks:[{...m.createAudioTrack(audio),id:'a0',in:1,out:4,start:10,trackId:'audio-main'}],overlays:[{...initial.overlays[0],id:'graphic',start:7,end:10}],subtitles:{...m.createSubtitles(),words:[{id:'w-main',segmentId:'s-main',text:'Clip.',start:2.5,end:3,source:{kind:'clip',id:'c0',start:1.5,end:2}},{id:'w-free',segmentId:'s-free',text:'Libero.',start:15,end:17}]}};current.current=next;setP(next);setTime(12);setZoom(26);setSelected(null);setSelection([]);setEffect(undefined);setSnapping(true);commits.current=0;}
+ function snapFixture(){throwGroup.current=false;setErrors([]);const next={...initial,assets:initial.assets.map(a=>({...a,duration:30})),clips:[{...m.createClip(video),id:'c0',in:1,out:4,start:2},{...m.createClip(video),id:'c1',in:1,out:3,start:8},{...m.createClip(video),id:'target',start:20}],audioTracks:[{...m.createAudioTrack(audio),id:'a0',in:1,out:4,start:10,trackId:'audio-main'},{...m.createAudioTrack(audio),id:'a1',in:0,out:4,start:22,trackId:'audio-main'}],overlays:[{...initial.overlays[0],id:'graphic',start:7,end:10}],subtitles:{...m.createSubtitles(),words:[{id:'w-main',segmentId:'s-main',text:'Clip.',start:2.5,end:3,source:{kind:'clip',id:'c0',start:1.5,end:2}},{id:'w-free',segmentId:'s-free',text:'Libero.',start:15,end:17}]}};current.current=next;setP(next);setTime(12);setZoom(26);setSelected(null);setSelection([]);setEffect(undefined);setSnapping(true);commits.current=0;}
  useEffect(()=>{window.timelineReview={project:p,time,zoom,errors,bulk,snapping,commits:commits.current,setTime,setZoom,setEffect,setSelection,setSnapping,throwGroup,reset,snapFixture,fit(){const node=document.querySelector('.timeline-scroll');setZoom(Math.max(MIN_TIMELINE_ZOOM,Math.min(MAX_TIMELINE_ZOOM,(node.clientWidth-TIMELINE_GUTTER-32)/m.projectDuration(current.current))));},longFilm(){const next={...current.current,duration:86400};current.current=next;setP(next);setTime(0);},upper};});
  useEffect(()=>{const key=e=>{if(e.defaultPrevented||e.target.closest('input,textarea,select'))return;if(e.key==='Home')setTime(0);if(e.key==='End')setTime(m.projectDuration(current.current));};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
- return <div style={{display:'flex',height:540,width:1000}}><Timeline project={p} time={time} zoom={zoom} snappingEnabled={snapping} onZoomChange={setZoom} selectedId={selected} selectedIds={selection} selectedEffectId={effect} onSelectOverlay={setEffect} onSelectSubtitle={index=>setEffect('subtitle:'+index)} onSelectionChange={setSelection} onSelect={setSelected} onTimeChange={setTime} onReorder={(id,index)=>edit(m.moveClip(current.current,id,index))} onReorderGroup={(ids,index)=>edit(m.moveClips(current.current,ids,index))} onMoveItem={(id,kind,lane,start)=>edit(m.moveTimelineItem(current.current,id,kind,lane,start))} onMoveGroup={(ids,delta)=>{if(throwGroup.current)throw new Error('Spostamento non disponibile');edit(m.shiftClips(current.current,ids,delta));}} onDropAsset={()=>setBulk({single:true})} onDropAssets={(ids,lane,time)=>setBulk({ids,lane,time})} onDropError={message=>setErrors(values=>[...values,message])} onTrim={(id,input,output)=>edit(m.trimClip(current.current,id,input,output))} onAudioChange={(id,patch)=>edit(m.updateAudioTrack(current.current,id,patch))} onOverlayChange={(id,patch)=>edit({...current.current,overlays:current.current.overlays.map(o=>o.id===id?{...o,...patch}:o)})} onSubtitleChange={(index,timing)=>edit(m.setSubtitleEventTiming(current.current,index,timing))} /></div>;
+ return <><button id="library-drag" draggable onDragStart={event=>{event.dataTransfer.setData('application/x-ducky-asset',video.id);event.dataTransfer.effectAllowed='copy';}}>Media di prova</button><div style={{display:'flex',height:540,width:1000}}><Timeline project={p} time={time} zoom={zoom} snappingEnabled={snapping} onZoomChange={setZoom} selectedId={selected} selectedIds={selection} selectedEffectId={effect} onSelectOverlay={setEffect} onSelectSubtitle={index=>setEffect('subtitle:'+index)} onSelectionChange={setSelection} onSelect={setSelected} onTimeChange={setTime} onPlaceItem={(id,kind,ids,lane,start,pointerTime)=>{if(throwGroup.current)throw new Error('Spostamento non disponibile');edit(m.applyTimelineMove(current.current,id,kind,ids,lane,start,pointerTime));}} onMoveGroup={(ids,delta)=>edit(m.shiftClips(current.current,ids,delta))} onDropAsset={(id,_index,lane,time)=>edit(insertLibraryAssets(current.current,[id],time,lane).project)} onDropAssets={(ids,lane,time)=>{setBulk({ids,lane,time});edit(insertLibraryAssets(current.current,ids,time,lane).project);}} onDropError={message=>setErrors(values=>[...values,message])} onTrim={(id,input,output)=>edit(m.trimClip(current.current,id,input,output))} onAudioChange={(id,patch)=>edit(m.updateAudioTrack(current.current,id,patch))} onOverlayChange={(id,patch)=>edit({...current.current,overlays:current.current.overlays.map(o=>o.id===id?{...o,...patch}:o)})} onSubtitleChange={(index,timing)=>edit(m.setSubtitleEventTiming(current.current,index,timing))} /></div></>;
 }
 createRoot(document.getElementById('root')).render(<Harness/>);
 `;
@@ -71,7 +72,7 @@ async function snapFixture() {
   await expect.poll(() => get('({start:window.timelineReview.project.clips[0].start,track:window.timelineReview.project.clips[0].trackId,time:window.timelineReview.time,commits:window.timelineReview.commits,snapping:window.timelineReview.snapping})')).toEqual({ start: 2, track: 'video-main', time: 12, commits: 0, snapping: true });
   await scroll.evaluate(node => { node.scrollLeft = 0; node.scrollTop = 0; });
 }
-async function moveNative(id: string, trackId: string, start: number, snapped?: number, alt = false) {
+async function moveNative(id: string, trackId: string, start: number, snapped?: number, alt = false, expectedPlacement?: number) {
   const source = page.locator(`[data-item-id="${id}"]`), lane = page.locator(`[data-track-id="${trackId}"]`);
   const box = await source.boundingBox(), target = await lane.boundingBox(), bounds = await scroll.boundingBox(); assert.ok(box && target && bounds);
   const x = bounds.x + 186 + (start + box.width / 2 / 26) * 26;
@@ -81,6 +82,7 @@ async function moveNative(id: string, trackId: string, start: number, snapped?: 
   await page.mouse.move(x, target.y + 35, { steps: 5 });
   if (snapped !== undefined) await expect(page.locator('.timeline-snap-guide')).toHaveAttribute('data-snap-time', String(snapped));
   else await expect(page.locator('.timeline-snap-guide')).toHaveCount(0);
+  if (expectedPlacement !== undefined) await expect(page.locator('.timeline-placement-indicator')).toHaveAttribute('data-drop-time', String(expectedPlacement));
   await page.mouse.up(); if (alt) await page.keyboard.up('Alt');
   await expect.poll(() => get<number>('window.timelineReview.commits')).toBe(1);
   await expect(page.locator('.timeline-snap-guide')).toHaveCount(0);
@@ -149,6 +151,63 @@ try {
   const order = await get<string[]>('window.timelineReview.project.clips.filter(c=>c.trackId==="video-main").map(c=>c.id)');
   assert.deepEqual(order.slice(0, 4), ['c2', 'c3', 'c0', 'c1']);
   await page.locator('.timeline-track-lane').first().evaluate((node) => node.dispatchEvent(new DragEvent('dragleave', { bubbles: true, relatedTarget: window })));
+  // Drop directly at a cut with a real library drag; the other video lane stays put.
+  await reset();
+  const trackBox = await page.locator('[data-track-id="video-main"]').boundingBox();
+  const timelineBounds = await scroll.boundingBox();
+  assert.ok(trackBox && timelineBounds);
+  const library = await page.locator('#library-drag').boundingBox();
+  assert.ok(library);
+  await page.mouse.move(library.x + 10, library.y + 8); await page.mouse.down();
+  await page.mouse.move(library.x + 30, library.y + 8, { steps: 3 });
+  await page.mouse.move(timelineBounds.x + 186 + 5 * 26, trackBox.y + 40, { steps: 8 });
+  await expect(page.locator('.timeline-placement-indicator')).toHaveAttribute('data-drop-time', '5');
+  await page.mouse.up();
+  await expect.poll(() => get<number>('window.timelineReview.commits')).toBe(1);
+  assert.deepEqual(await get('window.timelineReview.project.clips.filter(c=>["c0","c1","c2"].includes(c.id)).map(c=>c.start)'), [0,10,15]);
+  assert.equal(await get('window.timelineReview.project.clips.find(c=>c.id==="upper-early").start'), 10);
+  // Release within a clip as well: respect the mouse time and keep both halves.
+  await reset();
+  const insideTarget = page.locator('[data-item-id="c0"]');
+  await page.locator('#library-drag').dragTo(insideTarget, { targetPosition: { x: 65, y: 32 } });
+  await expect.poll(() => get<number>('window.timelineReview.commits')).toBe(1);
+  const afterSplit = await get<number[][]>('window.timelineReview.project.clips.filter(c=>c.trackId==="video-main").sort((a,b)=>a.start-b.start).slice(0,4).map(c=>[c.start,c.in,c.out])');
+  const droppedAt = await get<number>('(window.dragLog.filter(e=>e[0]==="drop").at(-1)[2] - document.querySelector(".timeline-scroll").getBoundingClientRect().left - document.querySelector(".timeline-scroll").clientLeft - 186) / 26');
+  assert.ok(Math.abs(afterSplit[1][0] - droppedAt) < .000001, `Inserted at ${afterSplit[1][0]} instead of ${droppedAt}`);
+  assert.equal(afterSplit[0][2], afterSplit[1][0]);
+  assert.equal(afterSplit[2][1], afterSplit[1][0]);
+  assert.equal(afterSplit[2][0], afterSplit[1][0] + 5);
+  assert.deepEqual(afterSplit[3], [10, 0, 5]);
+  // At maximum zoom one pixel can be shorter than the shortest editable clip.
+  // With the magnet off, the displayed cut and the committed cut must still agree.
+  await snapFixture();
+  await page.evaluate(() => {
+    (window as any).timelineReview.setZoom(240);
+    (window as any).timelineReview.setSnapping(false);
+  });
+  await expect.poll(() => get<number>('window.timelineReview.zoom')).toBe(240);
+  await scroll.evaluate(node => { node.scrollLeft = 0; });
+  const closeToCut = timelineBounds.x + 186 + 2 * 240 + 1;
+  await page.mouse.move(library.x + 10, library.y + 8); await page.mouse.down();
+  await page.mouse.move(library.x + 25, library.y + 8, { steps: 3 });
+  await page.mouse.move(closeToCut, trackBox.y + 40, { steps: 12 });
+  await expect(page.locator('.timeline-placement-indicator')).toHaveAttribute('data-drop-time', '2');
+  await page.mouse.up();
+  await expect.poll(() => get<number>('window.timelineReview.commits')).toBe(1);
+  assert.equal(await get('window.timelineReview.project.clips.length'), 4);
+  assert.equal(await get('window.timelineReview.project.clips.find(c=>!["c0","c1","target"].includes(c.id)).start'), 2);
+  // Slight overlap beyond magnet tolerance should dock instead of returning to the old position.
+  await snapFixture(); await moveNative('c1', 'video-main', 4.35, undefined, false, 5);
+  assert.equal(await get('window.timelineReview.project.clips.find(c=>c.id==="c1").start'), 5);
+  await snapFixture(); await moveNative('c0', 'video-main', 5.4, undefined, false, 5);
+  assert.equal(await get('window.timelineReview.project.clips.find(c=>c.id==="c0").start'), 5);
+  await snapFixture(); await moveNative('c0', 'video-main', 6.75, undefined, false, 10);
+  assert.equal(await get('window.timelineReview.project.clips.find(c=>c.id==="c0").start'), 10);
+  await snapFixture(); await moveNative('a0', 'audio-main', 19.4, undefined, false, 19);
+  assert.equal(await get('window.timelineReview.project.audioTracks.find(a=>a.id==="a0").start'), 19);
+  await snapFixture(); await moveNative('a0', 'audio-main', 21.61, undefined, false, 26);
+  assert.equal(await get('window.timelineReview.project.audioTracks.find(a=>a.id==="a0").start'), 26);
+  await reset();
   // Bulk payload takes precedence over the compatibility single-file payload.
   const lane = page.locator('[data-track-id="audio-main"]');
   await lane.evaluate((node) => { const transfer = new DataTransfer(); transfer.setData('application/x-ducky-assets', JSON.stringify(['asset-v', 'asset-a'])); transfer.setData('application/x-ducky-asset', 'asset-v'); const bounds = node.getBoundingClientRect(); node.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: transfer, clientX: bounds.left + 220, clientY: bounds.top + 20 })); });
@@ -211,7 +270,7 @@ try {
   await page.mouse.up(); await expect.poll(() => get<number>('window.timelineReview.commits')).toBe(1);
   assert.ok(Math.abs(await get<number>('window.timelineReview.project.overlays[0].end') - 19.85) < .02);
   assert.deepEqual(pageErrors, []);
-  console.log('Timeline UI passed: 32-clip drag/insert/autoscroll and caption sync; anchored zoom, fit and follow; visible start/end/group magnet, disabled/Alt free movement, audio/video/effect/subtitle trims and one commit per gesture.');
+  console.log('Timeline UI passed: exact library drop at cut and inside clip, ripple, shallow/deep video and audio overlap, 32-clip drag/autoscroll and caption sync; anchored zoom, fit and follow; visible start/end/group magnet, disabled/Alt free movement, audio/video/effect/subtitle trims and one commit per gesture.');
 } catch (error) {
   console.log('Timeline failure diagnostics', await get('({drag:window.dragLog,errors:window.timelineReview.errors,time:window.timelineReview.time,scroll:document.querySelector(".timeline-scroll").scrollLeft,order:window.timelineReview.project.clips.filter(c=>c.trackId==="video-main").map(c=>c.id)})'));
   await fs.mkdir('test-results', { recursive: true });
